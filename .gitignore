@@ -1,0 +1,23 @@
+# vastai-gguf-launcher
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# local state (instance IDs, tunnel PIDs, pinned quants)
+.last_instance
+.hf_pin
+
+# SSH tunnel artifacts
+/tmp/vastai-gguf-tunnel.pid
+/tmp/vastai-gguf-tunnel.ssh
+/tmp/vastai-gguf-cm
+
+# HuggingFace token (never commit)
+.cache/
+
+# local config overrides
+recipes.local.toml
+.env
