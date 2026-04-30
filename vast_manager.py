@@ -1045,7 +1045,7 @@ def banner(docker_img):
     ))
 
 def main():
-    cfg, recipes, gpu_tiers, docker_img = load_config()
+    cfg, recipes, gpu_tiers, docker_cfg = load_config()
 
     while True:
         console.clear()
