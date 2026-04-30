@@ -106,14 +106,17 @@ case "${MODEL}_${GPU}" in
         PARALLEL="${PARALLEL:-4}"
         ;;
     *)
-        echo "Unknown MODEL=${MODEL} GPU=${GPU}" >&2
-        echo "  valid GPU: 5090 | 4090 | 6000pro" >&2
-        echo "  valid MODEL: dense | moe | moe-256k | moe-beast" >&2
-        echo "  valid combos:" >&2
-        echo "    dense_5090  dense_4090  dense_6000pro" >&2
-        echo "    moe_5090    moe_4090    moe_6000pro" >&2
-        echo "    moe-256k_5090  moe-beast_6000pro" >&2
-        exit 2
+        # Unknown MODEL name — only error if caller didn't supply explicit vars.
+        # vast_manager.py always passes MODEL_REPO/MODEL_QUANT/CTX/PARALLEL
+        # directly from recipes.toml so the case block is just for defaults.
+        if [ -z "${MODEL_REPO:-}" ] || [ -z "${MODEL_QUANT:-}" ] || [ -z "${CTX:-}" ]; then
+            echo "Unknown MODEL=${MODEL} GPU=${GPU}" >&2
+            echo "  valid GPU: 5090 | 4090 | 6000pro" >&2
+            echo "  valid MODEL: dense | moe | moe-256k | moe-beast" >&2
+            echo "  or set MODEL_REPO + MODEL_QUANT + CTX explicitly." >&2
+            exit 2
+        fi
+        PARALLEL="${PARALLEL:-1}"
         ;;
 esac
 
