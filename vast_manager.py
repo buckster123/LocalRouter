@@ -814,14 +814,19 @@ def menu_launch(recipes, gpu_tiers, docker_cfg):
     if kv_label is None or kv_label == "← Back": return
     kv_key = KV_TYPES[kv_label]
 
-    # 6. Vision
-    mmproj = questionary.select(
-        "Vision support (mmproj, adds ~2 GB VRAM):",
-        choices=["No (text-only, recommended)", "Yes — enable mmproj F16", "← Back"],
-        style=MENU_STYLE,
-    ).ask()
-    if mmproj is None or mmproj == "← Back": return
-    mmproj_val = "F16" if mmproj.startswith("Yes") else ""
+    # 6. Vision — auto-enable if recipe declares mmproj, else prompt
+    recipe_mmproj = chosen_recipe.get("mmproj", "")
+    if recipe_mmproj:
+        mmproj_val = recipe_mmproj
+        console.print(f"[dim]Vision: mmproj={mmproj_val} (from recipe)[/dim]")
+    else:
+        mmproj = questionary.select(
+            "Vision support (mmproj, adds ~2 GB VRAM):",
+            choices=["No (text-only, recommended)", "Yes — enable mmproj F16", "← Back"],
+            style=MENU_STYLE,
+        ).ask()
+        if mmproj is None or mmproj == "← Back": return
+        mmproj_val = "F16" if mmproj.startswith("Yes") else ""
 
     # 7. Max price
     tier_cfg      = gpu_tiers.get(gpu_key, {})

@@ -231,29 +231,100 @@ description = "Dense 27B full Q8 quality. Dense KV is fat — 4×128K sweet spot
 
 [[recipes]]
 name        = "qwen36-35b-moe-q8-h100"
-label       = "Qwen3.6-35B-A3B MoE  Q8_K  4×256K"
+label       = "Qwen3.6-35B-A3B  Q8_K  8×256K  (hybrid KV magic)"
 gpu         = "h100-sxm"
 model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 1048576
-parallel    = 4
+ctx         = 2097152
+parallel    = 8
 kv_type     = "q8_0"
-description = "Max quality MoE on H100 80GB. ~55 GiB. ~180 t/s decode."
+description = "Hybrid-linear arch: only 10/41 layers use full KV — 2.7 GB per 256K slot. 8 slots use ~58 GiB total. ~136 t/s confirmed."
+
+[[recipes]]
+name        = "qwen36-35b-moe-q8-12slot-h100"
+label       = "Qwen3.6-35B-A3B  Q8_K  12×256K  (max slots)"
+gpu         = "h100-sxm"
+model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+model_quant = "UD-Q8_K_XL"
+ctx         = 3145728
+parallel    = 12
+kv_type     = "q8_0"
+description = "12 parallel 256K slots — KV only 33 GB total due to hybrid arch. Bold but fits. Drop to 8 if OOM on first run."
 
 [[recipes]]
 name        = "qwen36-27b-q8-h100"
-label       = "Qwen3.6-27B  Q8_K  2×128K"
+label       = "Qwen3.6-27B  Q8_K  8×128K"
 gpu         = "h100-sxm"
 model_repo  = "unsloth/Qwen3.6-27B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 262144
-parallel    = 2
+ctx         = 1048576
+parallel    = 8
 kv_type     = "q8_0"
-description = "Dense 27B lossless quality, 2 slots × 128K on H100."
+description = "Dense 27B lossless quality. 8 slots × 128K, ~44 GiB total on H100."
+
+[[recipes]]
+name        = "qwen35-27b-q8-h100"
+label       = "Qwen3.5-27B  Q8  8×128K"
+gpu         = "h100-sxm"
+model_repo  = "unsloth/Qwen3.5-27B-GGUF"
+model_quant = "Q8_0"
+ctx         = 1048576
+parallel    = 8
+kv_type     = "q8_0"
+description = "Qwen3.5 dense 27B at lossless Q8. ~29 GiB weights + ~40 GiB KV. Fast and sharp."
+
+[[recipes]]
+name        = "qwen35-35b-moe-q8-h100"
+label       = "Qwen3.5-35B-A3B  Q8  3×256K"
+gpu         = "h100-sxm"
+model_repo  = "unsloth/Qwen3.5-35B-A3B-GGUF"
+model_quant = "Q8_0"
+ctx         = 786432
+parallel    = 3
+kv_type     = "q8_0"
+description = "Qwen3.5 MoE 35B — full transformer (all 64 layers KV), so 3 slots at 256K fits. ~69 GiB total."
+
+[[recipes]]
+name        = "qwen3-vl-30b-q8-h100"
+label       = "Qwen3-VL-30B-A3B  Q8  8×128K  🖼 vision"
+gpu         = "h100-sxm"
+model_repo  = "unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF"
+model_quant = "Q8_K_XL"
+mmproj      = "F16"
+ctx         = 1048576
+parallel    = 8
+kv_type     = "q8_0"
+min_disk_gb = 120
+description = "Vision MoE: 3B active params + vision encoder. 8 slots × 128K. Image + text in, full ctx depth."
+
+[[recipes]]
+name        = "qwen3-vl-32b-q6-h100"
+label       = "Qwen3-VL-32B  Q6  3×128K  🖼 vision (dense)"
+gpu         = "h100-sxm"
+model_repo  = "unsloth/Qwen3-VL-32B-Instruct-GGUF"
+model_quant = "Q6_K"
+mmproj      = "F16"
+ctx         = 393216
+parallel    = 3
+kv_type     = "q8_0"
+min_disk_gb = 120
+description = "Dense 32B vision model Q6. ~26 GiB weights + vision encoder. 3 slots × 128K."
+
+[[recipes]]
+name        = "qwen35-122b-q3-h100"
+label       = "Qwen3.5-122B-A10B  Q3_K_M  2×64K  (big brain)"
+gpu         = "h100-sxm"
+model_repo  = "unsloth/Qwen3.5-122B-A10B-GGUF"
+model_quant = "Q3_K_M"
+ctx         = 131072
+parallel    = 2
+kv_type     = "q4_0"
+min_disk_gb = 150
+description = "122B MoE at Q3 — only quant that fits single H100 (~56 GiB weights + ~22 GiB free). KV q4_0 to stretch ctx. 10B active params = surprisingly fast."
 
 [[recipes]]
 name        = "qwen3-72b-q4-h100"
-label       = "Qwen3-72B  Q4_K  1×64K"
+label       = "Qwen3.5-72B  Q4_K  1×64K"
 gpu         = "h100-sxm"
 model_repo  = "bartowski/Qwen3-72B-GGUF"
 model_quant = "Q4_K_M"
