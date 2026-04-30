@@ -94,6 +94,9 @@ def _load_toml(path):
             k, v = m.group(1), m.group(2).strip()
             if v.startswith('"') and v.endswith('"'):
                 cur[k] = v[1:-1]
+            elif v.startswith('[') and v.endswith(']'):
+                # Simple string array: ["A", "B", "C"]
+                cur[k] = re.findall(r'"([^"]+)"', v)
             elif v.isdigit():
                 cur[k] = int(v)
             else:
@@ -106,16 +109,30 @@ def _load_toml(path):
 
 
 def load_config():
-    """Load recipes.toml. Returns (cfg_dict, recipes_list, gpu_tiers_dict)."""
+    """Load recipes.toml. Returns (cfg, recipes, gpu_tiers, docker_cfg)."""
     cfg_path = ROOT / "recipes.toml"
     if not cfg_path.exists():
         console.print(f"[red]recipes.toml not found at {cfg_path}[/red]")
         sys.exit(1)
-    cfg = _load_toml(cfg_path)
+    cfg        = _load_toml(cfg_path)
     recipes    = cfg.get("recipes", [])
     gpu_tiers  = cfg.get("gpu_tiers", {})
-    docker_img = cfg.get("docker", {}).get("image", "ghcr.io/buckster123/qwen36-llamacpp:latest")
-    return cfg, recipes, gpu_tiers, docker_img
+    docker_cfg = cfg.get("docker", {})
+    # Fallback defaults if new keys not present
+    docker_cfg.setdefault("prebuilt", "ghcr.io/buckster123/vastai-gguf:prebuilt")
+    docker_cfg.setdefault("builder",  "ghcr.io/buckster123/vastai-gguf:builder")
+    return cfg, recipes, gpu_tiers, docker_cfg
+
+
+def image_for_type(docker_cfg, image_type):
+    """Return the docker image string for a given image_type."""
+    return docker_cfg.get(image_type, docker_cfg.get("prebuilt", "ghcr.io/buckster123/vastai-gguf:prebuilt"))
+
+
+def cold_start_estimate(image_type):
+    """Human-readable cold start estimate."""
+    return {"prebuilt": "~2 min  (image pull only)",
+            "builder":  "~12-18 min  (pull + SM compile)"}.get(image_type, "unknown")
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -600,7 +617,7 @@ def menu_hf_browser(recipes):
 
 # ── offer browser ─────────────────────────────────────────────────────────────
 
-def browse_offers(gpu_key, geo_key, max_price):
+def browse_offers(gpu_key, geo_key, max_price, tier_cfg=None, num_gpus=1, min_cuda="12.8"):
     geo_re_map = {
         "EU_NORDIC": "SE|NO|FI|DK|IS",
         "EU":        "SE|NO|FI|DK|IS|DE|NL|FR|BE|UK|IE|EE|LV|LT|PL|CZ|AT|CH|ES|PT|IT",
@@ -610,15 +627,24 @@ def browse_offers(gpu_key, geo_key, max_price):
     geo_re = geo_re_map.get(geo_key, ".*")
     console.print(f"\n[dim]Searching Vast offers for {gpu_key} in {geo_key}...[/dim]")
 
-    if gpu_key == "6000pro":
+    # Build gpu_filter from tier's vast_names list, or fall back to key-derived name
+    vast_names = (tier_cfg or {}).get("vast_names", [])
+    if isinstance(vast_names, str):
+        vast_names = [vast_names]
+    if vast_names:
+        if len(vast_names) == 1:
+            gpu_filter = f"gpu_name={vast_names[0]}"
+        else:
+            gpu_filter = f"gpu_name in [{','.join(vast_names)}]"
+    elif gpu_key == "6000pro":
         gpu_filter = 'gpu_name in [RTX_PRO_6000_WS,RTX_PRO_6000_S]'
     else:
         gpu_filter = f"gpu_name=RTX_{gpu_key}"
 
     raw, _, rc = capture(
-        f'vastai search offers "{gpu_filter} num_gpus=1 reliability>0.97 '
+        f'vastai search offers "{gpu_filter} num_gpus={num_gpus} reliability>0.97 '
         f'inet_down>300 dph_total<{max_price} disk_space>60 '
-        f'cuda_vers>=12.8 rentable=true" --order dph_total --raw 2>/dev/null',
+        f'cuda_vers>={min_cuda} rentable=true" --order dph_total --raw 2>/dev/null',
         timeout=20)
 
     if rc != 0 or not raw:
@@ -641,24 +667,28 @@ def browse_offers(gpu_key, geo_key, max_price):
     tbl.add_column("rel",     style="green",  width=6)
     tbl.add_column("VRAM",    width=7)
     tbl.add_column("↓ Mbps",  style="yellow", width=9)
-    tbl.add_column("CUDA",    width=6)
+    tbl.add_column("CUDA",    width=7)
     tbl.add_column("geo",     style="dim")
 
     choices_map = {}
     choice_list = []
     for o in filtered[:12]:
-        oid    = str(o.get("id", "?"))
-        dph    = f"{o.get('dph_total', 0):.3f}"
-        rel    = f"{o.get('reliability2', 0):.2f}"
-        vram   = str(int(o.get("gpu_ram", 0) / 1024))
-        bw_raw = o.get("inet_down", 0)
-        bw     = f"{bw_raw:.0f}"
-        cuda   = str(o.get("cuda_max_good", "?"))
-        geo    = o.get("geolocation", "?")
-        bw_col = "green" if bw_raw >= 2000 else ("yellow" if bw_raw >= 500 else "red")
+        oid      = str(o.get("id", "?"))
+        dph      = f"{o.get('dph_total', 0):.3f}"
+        rel      = f"{o.get('reliability2', 0):.2f}"
+        vram     = str(int(o.get("gpu_ram", 0) / 1024))
+        bw_raw   = o.get("inet_down", 0)
+        bw       = f"{bw_raw:.0f}"
+        cuda_raw = float(o.get("cuda_max_good", 0))
+        cuda_str = str(o.get("cuda_max_good", "?"))
+        geo      = o.get("geolocation", "?")
+        bw_col   = "green" if bw_raw >= 2000 else ("yellow" if bw_raw >= 500 else "red")
+        # Warn on CUDA >= 13.0 — Unsloth notes quality issues above this version
+        cuda_col = "yellow" if cuda_raw >= 13.0 else "white"
+        cuda_disp = f"[{cuda_col}]{cuda_str}{'⚠' if cuda_raw >= 13.0 else ''}[/{cuda_col}]"
         tbl.add_row(oid, dph, rel, f"{vram}GB",
-                    f"[{bw_col}]{bw}[/{bw_col}]", cuda, geo)
-        label = f"{oid:<11} ${dph}/hr  rel={rel}  {vram}GB  {bw}Mbps  {geo}"
+                    f"[{bw_col}]{bw}[/{bw_col}]", cuda_disp, geo)
+        label = f"{oid:<11} ${dph}/hr  rel={rel}  {vram}GB  {bw}Mbps  cuda={cuda_str}  {geo}"
         choices_map[label] = oid
         choice_list.append(label)
 
@@ -697,7 +727,7 @@ KV_TYPES = {
     "bf16  (full precision, most VRAM)":              "bf16",
 }
 
-def menu_launch(recipes, gpu_tiers, docker_img):
+def menu_launch(recipes, gpu_tiers, docker_cfg):
     hr("Launch wizard")
 
     # ── pinned quant from HF browser ──────────────────────────────────────────
@@ -815,28 +845,46 @@ def menu_launch(recipes, gpu_tiers, docker_img):
 
     offer_id = ""
     if browse_sel.startswith("Browse"):
-        offer_id = browse_offers(gpu_key, geo_key, max_price)
+        tier_cfg   = gpu_tiers.get(gpu_key, {})
+        num_gpus   = chosen_recipe.get("num_gpus", tier_cfg.get("num_gpus", 1))
+        min_cuda   = chosen_recipe.get("min_cuda", tier_cfg.get("min_cuda", "12.8"))
+        offer_id   = browse_offers(gpu_key, geo_key, max_price,
+                                   tier_cfg=tier_cfg, num_gpus=num_gpus, min_cuda=min_cuda)
         if offer_id is None: return
 
     # ── summary ───────────────────────────────────────────────────────────────
+    tier_cfg    = gpu_tiers.get(gpu_key, {})
+    image_type  = chosen_recipe.get("image_type", tier_cfg.get("image_type", "prebuilt"))
+    docker_img  = image_for_type(docker_cfg, image_type)
+    num_gpus    = chosen_recipe.get("num_gpus", tier_cfg.get("num_gpus", 1))
+    min_cuda    = chosen_recipe.get("min_cuda", tier_cfg.get("min_cuda", "12.8"))
+    vast_names  = tier_cfg.get("vast_names", [])
+    if isinstance(vast_names, list):
+        vast_names_str = " ".join(vast_names)
+    else:
+        vast_names_str = str(vast_names)
+
     hr()
     t = Table(box=box.SIMPLE_HEAVY, show_header=False, pad_edge=False)
     t.add_column("k", style="dim", width=16)
     t.add_column("v", style="bold")
-    t.add_row("GPU",      gpu_key)
-    t.add_row("Recipe",   chosen_recipe.get("label", chosen_recipe["name"]))
-    t.add_row("HF repo",  custom_repo or chosen_recipe.get("model_repo", "?"))
-    t.add_row("Quant",    custom_quant or chosen_recipe.get("model_quant", "?"))
-    t.add_row("Ctx",      str(chosen_recipe.get("ctx", "?")))
-    t.add_row("Parallel", str(chosen_recipe.get("parallel", 1)))
-    t.add_row("Mode",     mode_key)
-    t.add_row("KV type",  kv_key)
-    t.add_row("GEO",      geo_key)
-    t.add_row("Vision",   mmproj_val or "off")
-    t.add_row("Max $/hr", max_price)
-    t.add_row("Offer ID", offer_id or "auto-select")
-    t.add_row("HOST",     "[green]127.0.0.1[/green]  (tunnel-only — hardened)")
-    t.add_row("Image",    docker_img)
+    t.add_row("GPU",        gpu_key)
+    t.add_row("Recipe",     chosen_recipe.get("label", chosen_recipe["name"]))
+    t.add_row("HF repo",    custom_repo or chosen_recipe.get("model_repo", "?"))
+    t.add_row("Quant",      custom_quant or chosen_recipe.get("model_quant", "?"))
+    t.add_row("Ctx",        str(chosen_recipe.get("ctx", "?")))
+    t.add_row("Parallel",   str(chosen_recipe.get("parallel", 1)))
+    t.add_row("Mode",       mode_key)
+    t.add_row("KV type",    kv_key)
+    t.add_row("GEO",        geo_key)
+    t.add_row("Vision",     mmproj_val or "off")
+    t.add_row("Max $/hr",   max_price)
+    t.add_row("Num GPUs",   str(num_gpus))
+    t.add_row("Min CUDA",   str(min_cuda))
+    t.add_row("Offer ID",   offer_id or "auto-select")
+    t.add_row("Image type", f"[{'green' if image_type == 'prebuilt' else 'yellow'}]{image_type}[/]  {cold_start_estimate(image_type)}")
+    t.add_row("Image",      docker_img)
+    t.add_row("HOST",       "[green]127.0.0.1[/green]  (tunnel-only)")
     console.print(Panel(t, title="[bold]Launch config[/bold]", border_style="#3d3d5c"))
 
     if not questionary.confirm("Proceed with launch?", style=MENU_STYLE, default=True).ask():
@@ -854,9 +902,13 @@ def menu_launch(recipes, gpu_tiers, docker_img):
     env["GEO"]          = geo_key
     env["MAX_PRICE"]    = max_price
     env["DOCKER_IMAGE"] = docker_img
-    env["MIN_DISK_GB"]  = str(tier_cfg.get("min_disk_gb", 60))
-    # Pass MODEL=dense/moe/... for backward compat with the recipe case statement
+    env["IMAGE_TYPE"]   = image_type
+    env["MIN_DISK_GB"]  = str(chosen_recipe.get("min_disk_gb", tier_cfg.get("min_disk_gb", 60)))
+    env["NUM_GPUS"]     = str(num_gpus)
+    env["MIN_CUDA"]     = str(min_cuda)
     env["MODEL"]        = chosen_recipe.get("name", "custom")
+    if vast_names_str:
+        env["VAST_NAMES"] = vast_names_str
 
     if mmproj_val:
         env["MMPROJ"] = mmproj_val
@@ -997,7 +1049,7 @@ def main():
 
     while True:
         console.clear()
-        banner(docker_img)
+        banner(docker_cfg.get("prebuilt", "ghcr.io/buckster123/vastai-gguf:prebuilt"))
         show_status()
 
         choice = questionary.select(
@@ -1018,7 +1070,7 @@ def main():
 
         if choice is None or choice.startswith("Exit"):
             console.print("[dim]bye[/dim]"); break
-        elif choice.startswith("Launch"):    menu_launch(recipes, gpu_tiers, docker_img)
+        elif choice.startswith("Launch"):    menu_launch(recipes, gpu_tiers, docker_cfg)
         elif choice.startswith("Watch"):     menu_watch_boot()
         elif choice.startswith("Diagnose"):  menu_diagnose()
         elif choice.startswith("Instances"): menu_instances()

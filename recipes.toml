@@ -1,46 +1,127 @@
-# recipes.toml — model + GPU recipe catalogue for vastai-gguf-launcher
+# recipes.toml — GPU tier + model recipe catalogue for vastai-gguf-launcher
 #
-# Edit this file to add your own models/quants. The manager and launch scripts
-# read recipes from here — no Python or bash editing needed for new models.
+# Edit this file to add GPUs or models. The manager reads it at startup.
+# No Python or bash editing needed for new tiers or recipes.
 #
-# Each [[recipes]] entry defines a named configuration. The manager groups them
-# by gpu so the launch wizard shows only compatible recipes.
+# GPU tier fields:
+#   vast_names   list of Vast.ai gpu_name strings for this tier (required)
+#   label        display name in the TUI (required)
+#   max_price    $/hr ceiling for offer search (required)
+#   min_disk_gb  minimum container disk GB (default 60)
+#   image_type   "prebuilt" | "builder"  (default "prebuilt")
+#                prebuilt = fat binary image, fast cold start (~2 min pull)
+#                builder  = compiles llama.cpp at runtime for exact SM arch (~8-12 min extra)
+#   min_cuda     minimum cuda_vers for offer filter (default "12.8")
+#   num_gpus     GPUs per instance (default 1)
 #
-# Required fields:  name, label, gpu, model_repo, model_quant, ctx
-# Optional fields:  parallel (default 1), kv_type (default q8_0),
-#                   min_disk_gb (default 60), description
-#
-# GPU values must match the gpu_tiers keys below: 5090 | 4090 | 6000pro
-# (extend gpu_tiers if you need other cards)
+# Recipe fields:
+#   name         unique slug (required)
+#   label        display name in TUI (required)
+#   gpu          must match a gpu_tiers key (required)
+#   model_repo   HuggingFace repo (required)
+#   model_quant  quant tag matched as substring against filenames (required)
+#   ctx          total KV pool in tokens (required)
+#   parallel     concurrent decode slots, each gets ctx/parallel tokens (default 1)
+#   kv_type      q8_0 | q4_0 | bf16 (default q8_0)
+#   min_disk_gb  override tier default disk for heavy recipes
+#   image_type   override tier default image type
+#   description  free text shown in TUI
 
-# ── docker image ──────────────────────────────────────────────────────────────
+# ── docker images ─────────────────────────────────────────────────────────────
 [docker]
-# The container image that will be pulled on the Vast instance.
-# Must expose an OpenAI-compatible /v1 endpoint on port 8000.
-# Default: the prebuilt llama.cpp + hf-transfer image from this repo.
-# Build your own:  docker build -t ghcr.io/<you>/vastai-gguf:latest .
-#                  docker push ghcr.io/<you>/vastai-gguf:latest
-#                  (make the package public on GitHub)
-image = "ghcr.io/buckster123/qwen36-llamacpp:latest"
+# prebuilt: fat binary SM89 (4090) + SM120 (5090/6000Pro), fast cold start
+prebuilt = "ghcr.io/buckster123/vastai-gguf:prebuilt"
+# builder: CUDA dev toolchain only — compiles llama.cpp for exact SM arch at boot
+builder  = "ghcr.io/buckster123/vastai-gguf:builder"
+# legacy alias kept for backward compat while new images are being built
+prebuilt_legacy = "ghcr.io/buckster123/qwen36-llamacpp:latest"
 
-# ── price / disk ceilings per GPU tier ────────────────────────────────────────
+# ── consumer / workstation GPU tiers ─────────────────────────────────────────
+
 [gpu_tiers.5090]
+vast_names  = ["RTX_5090"]
+label       = "RTX 5090 32GB   (~$0.34/hr)"
 max_price   = "0.55"
 min_disk_gb = 60
-label       = "RTX 5090 32GB   (~$0.34/hr)"
+image_type  = "prebuilt"
+vram_gb     = 32
 
 [gpu_tiers.4090]
+vast_names  = ["RTX_4090"]
+label       = "RTX 4090 24GB   (~$0.28/hr)"
 max_price   = "0.45"
 min_disk_gb = 60
-label       = "RTX 4090 24GB   (~$0.28/hr)"
+image_type  = "prebuilt"
+vram_gb     = 24
 
 [gpu_tiers.6000pro]
+vast_names  = ["RTX_PRO_6000_WS", "RTX_PRO_6000_S"]
+label       = "RTX PRO 6000 96GB  (~$0.93/hr)"
 max_price   = "1.60"
 min_disk_gb = 80
-label       = "RTX PRO 6000 96GB (~$0.93/hr)"
+image_type  = "prebuilt"
+vram_gb     = 96
 
-# ── recipes ───────────────────────────────────────────────────────────────────
-# Qwen3.6 27B dense — RTX 5090
+# RTX 5090 in a datacenter (rare but exists — same card, better host hw)
+[gpu_tiers.5090-dc]
+vast_names  = ["RTX_5090"]
+label       = "RTX 5090 32GB  DC  (~$0.40/hr)"
+max_price   = "0.60"
+min_disk_gb = 60
+image_type  = "prebuilt"
+vram_gb     = 32
+
+# ── datacenter GPU tiers ──────────────────────────────────────────────────────
+
+[gpu_tiers.h100-sxm]
+vast_names  = ["H100_SXM", "H100_SXM5", "H100X"]
+label       = "H100 SXM 80GB   (~$2.50/hr)"
+max_price   = "3.50"
+min_disk_gb = 100
+image_type  = "builder"
+vram_gb     = 80
+
+[gpu_tiers.h100-pcie]
+vast_names  = ["H100_PCIE"]
+label       = "H100 PCIe 80GB  (~$1.80/hr)"
+max_price   = "2.80"
+min_disk_gb = 100
+image_type  = "builder"
+vram_gb     = 80
+
+[gpu_tiers.a100-sxm]
+vast_names  = ["A100_SXM4_80GB", "A100_SXM", "A100X"]
+label       = "A100 SXM 80GB   (~$1.20/hr)"
+max_price   = "2.00"
+min_disk_gb = 80
+image_type  = "builder"
+vram_gb     = 80
+
+[gpu_tiers.a100-pcie]
+vast_names  = ["A100_PCIE", "A100_PCIE_80GB"]
+label       = "A100 PCIe 80GB  (~$1.00/hr)"
+max_price   = "1.80"
+min_disk_gb = 80
+image_type  = "builder"
+vram_gb     = 80
+
+[gpu_tiers.h200-sxm]
+vast_names  = ["H200_SXM", "H200"]
+label       = "H200 SXM 141GB  (~$3.50/hr)"
+max_price   = "5.50"
+min_disk_gb = 150
+image_type  = "builder"
+vram_gb     = 141
+
+[gpu_tiers.b200-sxm]
+vast_names  = ["B200_SXM", "B200"]
+label       = "B200 SXM 192GB  (~$5+/hr)"
+max_price   = "9.00"
+min_disk_gb = 200
+image_type  = "builder"
+vram_gb     = 192
+
+# ── consumer recipes — RTX 5090 32GB ─────────────────────────────────────────
 
 [[recipes]]
 name        = "qwen36-27b-q6-5090"
@@ -51,9 +132,18 @@ model_quant = "UD-Q6_K_XL"
 ctx         = 98304
 parallel    = 1
 kv_type     = "q8_0"
-description = "Dense 27B at near-lossless quality. Best single-user throughput on 5090."
+description = "Dense 27B near-lossless quality. Best single-user throughput on 5090."
 
-# Qwen3.6 35B-A3B MoE — RTX 5090
+[[recipes]]
+name        = "qwen36-27b-q5-256k-5090"
+label       = "Qwen3.6-27B  Q5_K  256K ctx  (dense squeeze)"
+gpu         = "5090"
+model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+model_quant = "UD-Q5_K_XL"
+ctx         = 262144
+parallel    = 1
+kv_type     = "q4_0"
+description = "Dense 27B at 256K ctx on 32GB — needs q4_0 KV to fit. ~27.7 GB total, +3.8 GB headroom."
 
 [[recipes]]
 name        = "qwen36-35b-moe-q5-5090"
@@ -64,7 +154,7 @@ model_quant = "UD-Q5_K_XL"
 ctx         = 131072
 parallel    = 1
 kv_type     = "q8_0"
-description = "MoE 35B at Q5. Hybrid-linear attention — only 10/40 layers use full KV. Great throughput/quality tradeoff."
+description = "MoE 35B at Q5. Hybrid-linear attention — only 10/40 layers full-attn. Great quality."
 
 [[recipes]]
 name        = "qwen36-35b-moe-256k-5090"
@@ -75,9 +165,9 @@ model_quant = "UD-Q5_K_XL"
 ctx         = 262144
 parallel    = 1
 kv_type     = "q4_0"
-description = "256K context on 32GB by dropping KV quant to q4_0. ~27GiB total. Solo slot only."
+description = "256K on 32GB via q4_0 KV. ~27 GiB total. Solo slot. Hybrid-linear KV is tiny."
 
-# Qwen3.6 27B dense — RTX 4090
+# ── consumer recipes — RTX 4090 24GB ─────────────────────────────────────────
 
 [[recipes]]
 name        = "qwen36-27b-q4-4090"
@@ -88,9 +178,7 @@ model_quant = "UD-Q4_K_XL"
 ctx         = 65536
 parallel    = 1
 kv_type     = "q8_0"
-description = "Dense 27B at Q4 quality on the 4090's 24GB. Good value at ~$0.28/hr."
-
-# Qwen3.6 35B-A3B MoE — RTX 4090
+description = "Dense 27B at Q4 on 24GB. Good value at ~$0.28/hr."
 
 [[recipes]]
 name        = "qwen36-35b-moe-q4-4090"
@@ -101,9 +189,9 @@ model_quant = "UD-Q4_K_XL"
 ctx         = 49152
 parallel    = 1
 kv_type     = "q8_0"
-description = "MoE 35B on 4090. Tight fit but works — hybrid-linear KV saves the day."
+description = "MoE 35B on 4090. Tight fit, hybrid-linear KV saves the day."
 
-# Qwen3.6 35B-A3B MoE — RTX PRO 6000 96GB (THE BEAST)
+# ── consumer recipes — RTX PRO 6000 96GB ─────────────────────────────────────
 
 [[recipes]]
 name        = "qwen36-35b-moe-beast-6000pro"
@@ -115,7 +203,7 @@ ctx         = 1572864
 parallel    = 6
 kv_type     = "q8_0"
 min_disk_gb = 80
-description = "Max quality. 6 slots × 256K each. ~58GiB used. Main agent + 5 sub-agents all at max context."
+description = "Max quality. 6 slots × 256K. ~58 GiB used. Main + 5 sub-agents at full ctx."
 
 [[recipes]]
 name        = "qwen36-35b-moe-q6-6000pro"
@@ -137,18 +225,182 @@ model_quant = "UD-Q8_K_XL"
 ctx         = 524288
 parallel    = 4
 kv_type     = "q8_0"
-description = "Dense 27B at full Q8 quality. Dense KV is fat — 4×128K is the sweet spot."
+description = "Dense 27B full Q8 quality. Dense KV is fat — 4×128K sweet spot."
 
-# ── add your own below ────────────────────────────────────────────────────────
-# Example — Llama-3.3-70B on 6000 Pro:
+# ── datacenter recipes — H100 SXM 80GB (SM90) ────────────────────────────────
+
+[[recipes]]
+name        = "qwen36-35b-moe-q8-h100"
+label       = "Qwen3.6-35B-A3B MoE  Q8_K  4×256K"
+gpu         = "h100-sxm"
+model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+model_quant = "UD-Q8_K_XL"
+ctx         = 1048576
+parallel    = 4
+kv_type     = "q8_0"
+description = "Max quality MoE on H100 80GB. ~55 GiB. ~180 t/s decode."
+
+[[recipes]]
+name        = "qwen36-27b-q8-h100"
+label       = "Qwen3.6-27B  Q8_K  2×128K"
+gpu         = "h100-sxm"
+model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+model_quant = "UD-Q8_K_XL"
+ctx         = 262144
+parallel    = 2
+kv_type     = "q8_0"
+description = "Dense 27B lossless quality, 2 slots × 128K on H100."
+
+[[recipes]]
+name        = "qwen3-72b-q4-h100"
+label       = "Qwen3-72B  Q4_K  1×64K"
+gpu         = "h100-sxm"
+model_repo  = "bartowski/Qwen3-72B-GGUF"
+model_quant = "Q4_K_M"
+ctx         = 65536
+parallel    = 1
+kv_type     = "q8_0"
+description = "72B dense at Q4 on H100 80GB. ~40 GiB weights, ~8 GiB KV. Single slot."
+
+# ── datacenter recipes — H100 PCIe 80GB ──────────────────────────────────────
+
+[[recipes]]
+name        = "qwen36-35b-moe-q8-h100pcie"
+label       = "Qwen3.6-35B-A3B MoE  Q8_K  4×256K"
+gpu         = "h100-pcie"
+model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+model_quant = "UD-Q8_K_XL"
+ctx         = 1048576
+parallel    = 4
+kv_type     = "q8_0"
+description = "Same as H100 SXM recipe, lower bandwidth than SXM but cheaper."
+
+[[recipes]]
+name        = "qwen3-72b-q4-h100pcie"
+label       = "Qwen3-72B  Q4_K  1×64K"
+gpu         = "h100-pcie"
+model_repo  = "bartowski/Qwen3-72B-GGUF"
+model_quant = "Q4_K_M"
+ctx         = 65536
+parallel    = 1
+kv_type     = "q8_0"
+description = "72B dense at Q4 on H100 PCIe 80GB."
+
+# ── datacenter recipes — A100 SXM/PCIe 80GB (SM80) ───────────────────────────
+
+[[recipes]]
+name        = "qwen36-35b-moe-q6-a100"
+label       = "Qwen3.6-35B-A3B MoE  Q6_K  4×128K"
+gpu         = "a100-sxm"
+model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+model_quant = "UD-Q6_K_XL"
+ctx         = 524288
+parallel    = 4
+kv_type     = "q8_0"
+description = "MoE 35B Q6 on A100 80GB. 4 slots × 128K. Good quality/speed tradeoff."
+
+[[recipes]]
+name        = "qwen36-27b-q8-a100"
+label       = "Qwen3.6-27B  Q8_K  2×96K"
+gpu         = "a100-sxm"
+model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+model_quant = "UD-Q8_K_XL"
+ctx         = 196608
+parallel    = 2
+kv_type     = "q8_0"
+description = "Dense 27B lossless on A100. 2 slots × 96K."
+
+[[recipes]]
+name        = "qwen3-72b-q4-a100"
+label       = "Qwen3-72B  Q4_K  1×48K"
+gpu         = "a100-sxm"
+model_repo  = "bartowski/Qwen3-72B-GGUF"
+model_quant = "Q4_K_M"
+ctx         = 49152
+parallel    = 1
+kv_type     = "q8_0"
+description = "72B dense at Q4 on A100 80GB. Tight — ~40 GiB weights + ~6 GiB KV."
+
+[[recipes]]
+name        = "qwen36-35b-moe-q6-a100pcie"
+label       = "Qwen3.6-35B-A3B MoE  Q6_K  4×128K"
+gpu         = "a100-pcie"
+model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+model_quant = "UD-Q6_K_XL"
+ctx         = 524288
+parallel    = 4
+kv_type     = "q8_0"
+description = "Same as A100 SXM recipe, PCIe variant."
+
+# ── datacenter recipes — H200 SXM 141GB (SM90) ───────────────────────────────
+
+[[recipes]]
+name        = "qwen3-72b-q6-h200"
+label       = "Qwen3-72B  Q6_K  2×128K"
+gpu         = "h200-sxm"
+model_repo  = "bartowski/Qwen3-72B-GGUF"
+model_quant = "Q6_K_L"
+ctx         = 262144
+parallel    = 2
+kv_type     = "q8_0"
+description = "72B dense Q6 on H200 141GB. ~57 GiB weights + ~30 GiB KV. Very fast."
+
+[[recipes]]
+name        = "qwen36-35b-moe-q8-6slot-h200"
+label       = "Qwen3.6-35B-A3B MoE  Q8_K  8×256K"
+gpu         = "h200-sxm"
+model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+model_quant = "UD-Q8_K_XL"
+ctx         = 2097152
+parallel    = 8
+kv_type     = "q8_0"
+description = "MoE 35B Q8 with 8 slots × 256K on 141GB. ~38 GiB weights + ~85 GiB KV pool."
+
+[[recipes]]
+name        = "qwen3-72b-q8-h200"
+label       = "Qwen3-72B  Q8_0  1×64K"
+gpu         = "h200-sxm"
+model_repo  = "bartowski/Qwen3-72B-GGUF"
+model_quant = "Q8_0"
+ctx         = 65536
+parallel    = 1
+kv_type     = "q8_0"
+description = "72B lossless Q8 on H200. ~72 GiB weights + ~8 GiB KV. Max quality."
+
+# ── datacenter recipes — B200 SXM 192GB (SM100) ──────────────────────────────
+
+[[recipes]]
+name        = "qwen3-72b-q8-b200"
+label       = "Qwen3-72B  Q8_0  4×256K  (beast)"
+gpu         = "b200-sxm"
+model_repo  = "bartowski/Qwen3-72B-GGUF"
+model_quant = "Q8_0"
+ctx         = 1048576
+parallel    = 4
+kv_type     = "q8_0"
+description = "72B lossless Q8 on 192GB. ~72 GiB weights + 4 slots × 256K. ~25 GB/s HBM3e bandwidth."
+
+[[recipes]]
+name        = "qwen36-35b-moe-q8-10slot-b200"
+label       = "Qwen3.6-35B-A3B MoE  Q8_K  10×256K"
+gpu         = "b200-sxm"
+model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+model_quant = "UD-Q8_K_XL"
+ctx         = 2621440
+parallel    = 10
+kv_type     = "q8_0"
+description = "MoE 35B Q8, 10 slots × 256K on 192GB. ~38 GiB weights + ~110 GiB KV pool."
+
+# ── add your own recipes below ────────────────────────────────────────────────
+# Example — Llama-3.3-70B on H100:
 #
 # [[recipes]]
-# name        = "llama33-70b-q4-6000pro"
-# label       = "Llama-3.3-70B  Q4_K_M  2×64K"
-# gpu         = "6000pro"
+# name        = "llama33-70b-q4-h100"
+# label       = "Llama-3.3-70B  Q4_K_M  1×64K"
+# gpu         = "h100-sxm"
 # model_repo  = "bartowski/Meta-Llama-3.3-70B-Instruct-GGUF"
 # model_quant = "Q4_K_M"
-# ctx         = 131072
-# parallel    = 2
+# ctx         = 65536
+# parallel    = 1
 # kv_type     = "q8_0"
-# description = "Llama 3.3 70B at Q4. Needs ~40GB weights + KV."
+# description = "Llama 3.3 70B at Q4 on H100."

@@ -1,33 +1,34 @@
 #!/usr/bin/env bash
-# Qwen3.6 launcher for llama-server. Env-driven so the same image serves
-# Qwen3.6-27B (dense) and Qwen3.6-35B-A3B (MoE) without a rebuild.
+# Container entrypoint for vastai-gguf-launcher.
+# Env-driven so the same image serves any GGUF model without rebuilding.
 #
 # Required env:
 #   MODEL_REPO    HF repo,  e.g. unsloth/Qwen3.6-27B-GGUF
 #   MODEL_QUANT   quant tag, e.g. UD-Q6_K_XL  (matches *${MODEL_QUANT}*.gguf)
 #
 # Optional env:
-#   MMPROJ           if set (e.g. F16), also pulls *mmproj-${MMPROJ}*.gguf
-#                    (vision support for Qwen3.6 — both 27B and 35B-A3B are VLMs)
-#   CTX              default 65536 (64K). 5090/Q6 27B can do ~96K w/ q8 KV.
-#   KV_TYPE          bf16 | q8_0 | q4_0   (default q8_0 — halves KV memory)
+#   IMAGE_TYPE       prebuilt | builder  (default prebuilt)
+#                    builder: compiles llama.cpp for the host GPU's exact SM arch
+#   CTX              context tokens (default 65536)
+#   KV_TYPE          bf16 | q8_0 | q4_0   (default q8_0)
 #   MODE             thinking | coding | nonthinking   (default thinking)
-#                    Sets temp/top_p/min_p/presence_penalty per Unsloth recipe.
-#   N_GPU_LAYERS     default 999 (everything on GPU). Set lower to spill to CPU.
-#   PARALLEL         default 1. Concurrent decoder slots.
-#   EXTRA_ARGS       passthrough flags to llama-server (e.g. --metrics)
-#   HF_TOKEN         optional, for gated repos (Qwen3.6 unsloth GGUFs are public)
+#   N_GPU_LAYERS     default 999 (all on GPU)
+#   PARALLEL         concurrent decode slots (default 1)
+#   EXTRA_ARGS       passthrough to llama-server
+#   HF_TOKEN         for gated repos
 #   MODELS_DIR       default /workspace/models
-#   PORT, HOST       default 8000, 0.0.0.0
+#   MMPROJ           F16 to enable vision
+#   PORT, HOST       default 8000, 127.0.0.1
 
 set -euo pipefail
 
 log() { printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 die() { log "FATAL: $*"; exit 1; }
 
-: "${MODEL_REPO:?MODEL_REPO env var required (e.g. unsloth/Qwen3.6-27B-GGUF)}"
-: "${MODEL_QUANT:?MODEL_QUANT env var required (e.g. UD-Q6_K_XL)}"
+: "${MODEL_REPO:?MODEL_REPO required (e.g. unsloth/Qwen3.6-27B-GGUF)}"
+: "${MODEL_QUANT:?MODEL_QUANT required (e.g. UD-Q6_K_XL)}"
 
+IMAGE_TYPE="${IMAGE_TYPE:-prebuilt}"
 CTX="${CTX:-65536}"
 KV_TYPE="${KV_TYPE:-q8_0}"
 MODE="${MODE:-thinking}"
@@ -36,12 +37,59 @@ PARALLEL="${PARALLEL:-1}"
 EXTRA_ARGS="${EXTRA_ARGS:-}"
 MODELS_DIR="${MODELS_DIR:-/workspace/models}"
 PORT="${PORT:-8000}"
-# Default to 127.0.0.1 — locked-down by design. Endpoint is reachable only
-# via SSH tunnel (see qwen36-harness/tools/vast_tunnel.sh). Override with
-# HOST=0.0.0.0 only if you understand you're exposing the GPU to the internet.
 HOST="${HOST:-127.0.0.1}"
 
-# Sampling presets from the Unsloth + Qwen3.6 model-card recipe.
+# ── builder path: compile llama.cpp for exact SM arch ─────────────────────────
+if [ "${IMAGE_TYPE}" = "builder" ] && [ ! -x /usr/local/bin/llama-server ]; then
+    log "==> builder image: no pre-compiled llama-server — detecting GPU arch..."
+
+    # Get compute capability from nvidia-smi, strip the dot: "9.0" → "90"
+    RAW_CAP="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ')"
+    if [ -z "${RAW_CAP}" ]; then
+        die "nvidia-smi returned no compute_cap — is the GPU visible?"
+    fi
+    SM="${RAW_CAP//./}"   # "9.0" → "90", "8.0" → "80", "10.0" → "100"
+    log "    detected SM arch: ${SM}  (compute_cap ${RAW_CAP})"
+
+    # SM100 (B200) needs a recent llama.cpp; warn if it might not be supported yet
+    if [ "${SM}" = "100" ]; then
+        log "    note: SM100 (Blackwell B200) support in llama.cpp is bleeding edge"
+        log "    if compile fails, try pinning LLAMA_CPP_REF to a known-good commit"
+    fi
+
+    SRC_DIR="/opt/llama.cpp"
+    BUILD_DIR="${SRC_DIR}/build"
+
+    # Source was cloned into the image at build time — just run cmake
+    if [ ! -d "${SRC_DIR}" ]; then
+        log "    llama.cpp source not found in image — cloning..."
+        git clone --depth 1 https://github.com/ggml-org/llama.cpp.git "${SRC_DIR}"
+    fi
+
+    log "    configuring for SM${SM}..."
+    cmake -B "${BUILD_DIR}" -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DGGML_CUDA=ON \
+        -DGGML_NATIVE=OFF \
+        -DCMAKE_CUDA_ARCHITECTURES="${SM}-real" \
+        -DLLAMA_CURL=ON \
+        -DBUILD_SHARED_LIBS=OFF \
+        "${SRC_DIR}" 2>&1 | tail -5
+
+    log "    compiling llama-server (this takes ~8-12 min on first boot)..."
+    cmake --build "${BUILD_DIR}" --config Release \
+        -j"$(nproc)" \
+        --target llama-server llama-bench 2>&1 | grep -E '^\[|error:|warning:' | tail -20
+
+    install -m755 "${BUILD_DIR}/bin/llama-server" /usr/local/bin/llama-server
+    install -m755 "${BUILD_DIR}/bin/llama-bench"  /usr/local/bin/llama-bench 2>/dev/null || true
+    log "    compile done — llama-server installed"
+fi
+
+# Sanity check
+[ -x /usr/local/bin/llama-server ] || die "llama-server not found — check image or build log"
+
+# ── sampling presets ───────────────────────────────────────────────────────────
 case "${MODE}" in
     thinking)
         SAMPLE_ARGS="--temp 1.0 --top-p 0.95 --top-k 20 --min-p 0.0 --presence-penalty 1.5"
@@ -60,12 +108,13 @@ case "${MODE}" in
         ;;
 esac
 
+# ── model fetch (idempotent) ───────────────────────────────────────────────────
 mkdir -p "${MODELS_DIR}"
 TARGET_DIR="${MODELS_DIR}/$(basename "${MODEL_REPO}")"
 
-# ---- model fetch (idempotent) -------------------------------------------------
 need_fetch=0
-if [ ! -d "${TARGET_DIR}" ] || [ -z "$(ls -1 "${TARGET_DIR}" 2>/dev/null | grep -i "${MODEL_QUANT}" || true)" ]; then
+if [ ! -d "${TARGET_DIR}" ] || \
+   [ -z "$(ls -1 "${TARGET_DIR}" 2>/dev/null | grep -i "${MODEL_QUANT}" || true)" ]; then
     need_fetch=1
 fi
 
@@ -82,9 +131,7 @@ else
     log "model already present in ${TARGET_DIR}, skipping fetch"
 fi
 
-# ---- locate weights -----------------------------------------------------------
-# UD quants for the bigger sizes are sharded; pass the FIRST shard, llama.cpp
-# auto-discovers the rest.
+# ── locate weights ─────────────────────────────────────────────────────────────
 MODEL_FILE="$(ls -1 "${TARGET_DIR}" | grep -iE "${MODEL_QUANT}.*\.gguf$" | grep -v 'mmproj' | sort | head -n1 || true)"
 [ -n "${MODEL_FILE}" ] || die "no .gguf matching '${MODEL_QUANT}' in ${TARGET_DIR}"
 MODEL_PATH="${TARGET_DIR}/${MODEL_FILE}"
@@ -96,7 +143,7 @@ if [ -n "${MMPROJ:-}" ]; then
     MMPROJ_ARGS="--mmproj ${TARGET_DIR}/${MMPROJ_FILE}"
 fi
 
-# ---- launch -------------------------------------------------------------------
+# ── launch ─────────────────────────────────────────────────────────────────────
 log "==> launching llama-server"
 log "    model   : ${MODEL_PATH}"
 log "    mmproj  : ${MMPROJ_ARGS:-<none>}"
@@ -105,10 +152,6 @@ log "    mode    : ${MODE}   parallel: ${PARALLEL}"
 log "    listen  : ${HOST}:${PORT}"
 nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader 2>/dev/null || true
 
-# --jinja: use the GGUF's embedded chat template (required for Qwen3.6 tool use)
-# --metrics: prometheus on /metrics
-# Tool-call parsing for Qwen3.6 uses the qwen3_coder grammar/parser internally
-# via the chat template, no separate flag needed in llama-server.
 exec llama-server \
     --model "${MODEL_PATH}" \
     ${MMPROJ_ARGS} \
