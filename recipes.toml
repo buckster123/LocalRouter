@@ -167,6 +167,61 @@ parallel    = 1
 kv_type     = "q4_0"
 description = "256K on 32GB via q4_0 KV. ~27 GiB total. Solo slot. Hybrid-linear KV is tiny."
 
+[[recipes]]
+name        = "carnice-27b-q5-96k-5090"
+label       = "Carnice-V2-27B  Q5_K  96K  🤖 hermes-tuned"
+gpu         = "5090"
+model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+model_quant = "Q5_K_M"
+ctx         = 98304
+parallel    = 1
+kv_type     = "q8_0"
+description = "Carnice SFT on Hermes traces. Q5 = 19.2 GiB, 96K q8_0 KV = 5.5 GiB. ~24.7 GiB total. A/B vs qwen36-27b-q6-5090."
+
+[[recipes]]
+name        = "carnice-27b-q5-256k-5090"
+label       = "Carnice-V2-27B  Q5_K  256K  🤖 hermes-tuned"
+gpu         = "5090"
+model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+model_quant = "Q5_K_M"
+ctx         = 262144
+parallel    = 1
+kv_type     = "q4_0"
+description = "Carnice at 256K via q4_0 KV. ~26.6 GiB total. A/B vs qwen36-27b-q5-256k-5090."
+
+[[recipes]]
+name        = "carnice-27b-q4-2x96k-5090"
+label       = "Carnice-V2-27B  Q4_K  2×96K  🤖 hermes-tuned"
+gpu         = "5090"
+model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+model_quant = "Q4_K_M"
+ctx         = 196608
+parallel    = 2
+kv_type     = "q8_0"
+description = "Q4 weights (16.6 GiB) unlock 2 parallel 96K slots on 5090. ~27.6 GiB total. 1+1 orchestration on a consumer card."
+
+[[recipes]]
+name        = "carnice-moe-q5-3x128k-5090"
+label       = "Carnice MoE 35B-A3B  Q5_K  3×128K  🤖 hermes-tuned"
+gpu         = "5090"
+model_repo  = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
+model_quant = "Q5_K_M"
+ctx         = 393216
+parallel    = 3
+kv_type     = "q8_0"
+description = "Carnice MoE at 3 slots on 5090. Hybrid-linear KV = 1.36 GiB per 128K slot. ~28.8 GiB total. 1+2 orchestration on consumer HW."
+
+[[recipes]]
+name        = "carnice-moe-q4-3x256k-5090"
+label       = "Carnice MoE 35B-A3B  Q4_K  3×256K  🤖 hermes-tuned  (hero)"
+gpu         = "5090"
+model_repo  = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
+model_quant = "Q4_K_M"
+ctx         = 786432
+parallel    = 3
+kv_type     = "q8_0"
+description = "Hero recipe: 3 slots × 256K on 32GB. Q4 (21.2 GiB) + hybrid KV (8.2 GiB) = ~29.4 GiB. Fits. Hermes orchestration at 256K per slot on a consumer card."
+
 # ── consumer recipes — RTX 4090 24GB ─────────────────────────────────────────
 
 [[recipes]]
@@ -190,6 +245,28 @@ ctx         = 49152
 parallel    = 1
 kv_type     = "q8_0"
 description = "MoE 35B on 4090. Tight fit, hybrid-linear KV saves the day."
+
+[[recipes]]
+name        = "carnice-27b-q4-64k-4090"
+label       = "Carnice-V2-27B  Q4_K  64K  🤖 hermes-tuned"
+gpu         = "4090"
+model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+model_quant = "Q4_K_M"
+ctx         = 65536
+parallel    = 1
+kv_type     = "q8_0"
+description = "Carnice SFT on 4090. Q4 (16.6 GiB) + 64K q8_0 KV (3.7 GiB) = ~20.3 GiB. A/B vs qwen36-27b-q4-4090."
+
+[[recipes]]
+name        = "carnice-moe-q4-48k-4090"
+label       = "Carnice MoE 35B-A3B  Q4_K  48K  🤖 hermes-tuned"
+gpu         = "4090"
+model_repo  = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
+model_quant = "Q4_K_M"
+ctx         = 49152
+parallel    = 1
+kv_type     = "q8_0"
+description = "Carnice MoE on 4090. Q4 (21.2 GiB) + hybrid 48K KV (~0.5 GiB) = ~21.7 GiB. A/B vs qwen36-35b-moe-q4-4090."
 
 # ── consumer recipes — RTX PRO 6000 96GB ─────────────────────────────────────
 
@@ -248,6 +325,39 @@ ctx         = 2097152
 parallel    = 8
 kv_type     = "q4_0"
 description = "Dense 27B Q8 weights, q4_0 KV for max slots. 8 slots × 256K, ~29 GiB weights + ~59 GiB KV = ~88 GiB. Same headroom, double the parallelism."
+
+[[recipes]]
+name        = "carnice-27b-q8-4x256k-6000pro"
+label       = "Carnice-V2-27B  Q8  4×256K  q8 KV  🤖 hermes-tuned"
+gpu         = "6000pro"
+model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+model_quant = "Q8_0"
+ctx         = 1048576
+parallel    = 4
+kv_type     = "q8_0"
+description = "Carnice SFT Q8. 4 slots × 256K, ~28.6 GiB weights + ~59 GiB KV = ~88 GiB. A/B vs qwen36-27b-q8-4x256k-6000pro."
+
+[[recipes]]
+name        = "carnice-27b-q8-8x256k-6000pro"
+label       = "Carnice-V2-27B  Q8  8×256K  q4 KV  🤖 hermes-tuned"
+gpu         = "6000pro"
+model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+model_quant = "Q8_0"
+ctx         = 2097152
+parallel    = 8
+kv_type     = "q4_0"
+description = "Carnice SFT Q8, q4_0 KV for max slots. 8 slots × 256K. A/B vs qwen36-27b-q8-8x256k-6000pro."
+
+[[recipes]]
+name        = "carnice-moe-q8-6x256k-6000pro"
+label       = "Carnice MoE 35B-A3B  Q8  6×256K  🤖 hermes-tuned"
+gpu         = "6000pro"
+model_repo  = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
+model_quant = "Q8_0"
+ctx         = 1572864
+parallel    = 6
+kv_type     = "q8_0"
+description = "Carnice MoE Q8 (36.9 GiB) + hybrid 6×256K KV (16.3 GiB) = ~55 GiB. Plenty of headroom on 96GB. A/B vs qwen36-35b-moe-beast-6000pro."
 
 # ── datacenter recipes — H100 SXM 80GB (SM90) ────────────────────────────────
 
