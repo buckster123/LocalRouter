@@ -252,6 +252,28 @@ kv_type     = "q8_0"
 description = "12 parallel 256K slots — KV only 33 GB total due to hybrid arch. Bold but fits. Drop to 8 if OOM on first run."
 
 [[recipes]]
+name        = "qwen36-27b-q8-3x256k-h100"
+label       = "Qwen3.6-27B  Q8_K  3×256K  q8 KV"
+gpu         = "h100-sxm"
+model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+model_quant = "UD-Q8_K_XL"
+ctx         = 786432
+parallel    = 3
+kv_type     = "q8_0"
+description = "Dense 27B lossless Q8 at 256K ctx. 3 slots × 256K, ~29 GiB weights + ~44 GiB KV = ~75 GiB. Solid ~5 GiB headroom on H100."
+
+[[recipes]]
+name        = "qwen36-27b-q8-6x256k-h100"
+label       = "Qwen3.6-27B  Q8_K  6×256K  q4 KV"
+gpu         = "h100-sxm"
+model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+model_quant = "UD-Q8_K_XL"
+ctx         = 1572864
+parallel    = 6
+kv_type     = "q4_0"
+description = "Dense 27B Q8 weights, q4_0 KV to double the slots. 6 slots × 256K, ~29 GiB weights + ~44 GiB KV = ~75 GiB. Same total as 3-slot but twice the parallelism at a small KV quality cost."
+
+[[recipes]]
 name        = "qwen36-27b-q8-h100"
 label       = "Qwen3.6-27B  Q8_K  8×128K"
 gpu         = "h100-sxm"
