@@ -241,6 +241,17 @@ kv_type     = "q8_0"
 description = "Hybrid-linear arch: only 10/41 layers use full KV — 2.7 GB per 256K slot. 8 slots use ~58 GiB total. ~136 t/s confirmed."
 
 [[recipes]]
+name        = "carnice-moe-35b-q8-h100"
+label       = "Carnice MoE 35B-A3B  Q8  8×256K  🤖 hermes-tuned"
+gpu         = "h100-sxm"
+model_repo  = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
+model_quant = "Q8_0"
+ctx         = 2097152
+parallel    = 8
+kv_type     = "q8_0"
+description = "Carnice QLoRA on MoE 35B-A3B. Two-stage: reasoning repair then Hermes agent traces. Q8_0 = 36.9 GiB. Same 8×256K slot config as base. A/B vs qwen36-35b-moe-q8-h100."
+
+[[recipes]]
 name        = "qwen36-35b-moe-q8-12slot-h100"
 label       = "Qwen3.6-35B-A3B  Q8_K  12×256K  (max slots)"
 gpu         = "h100-sxm"
@@ -272,6 +283,28 @@ ctx         = 1572864
 parallel    = 6
 kv_type     = "q4_0"
 description = "Dense 27B Q8 weights, q4_0 KV to double the slots. 6 slots × 256K, ~29 GiB weights + ~44 GiB KV = ~75 GiB. Same total as 3-slot but twice the parallelism at a small KV quality cost."
+
+[[recipes]]
+name        = "carnice-27b-q8-3x256k-h100"
+label       = "Carnice-V2-27B  Q8  3×256K  q8 KV  🤖 hermes-tuned"
+gpu         = "h100-sxm"
+model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+model_quant = "Q8_0"
+ctx         = 786432
+parallel    = 3
+kv_type     = "q8_0"
+description = "Carnice SFT on Hermes agent traces. Full merged BF16→Q8. 3×256K, same VRAM profile as base. A/B vs qwen36-27b-q8-3x256k-h100."
+
+[[recipes]]
+name        = "carnice-27b-q8-6x256k-h100"
+label       = "Carnice-V2-27B  Q8  6×256K  q4 KV  🤖 hermes-tuned"
+gpu         = "h100-sxm"
+model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+model_quant = "Q8_0"
+ctx         = 1572864
+parallel    = 6
+kv_type     = "q4_0"
+description = "Carnice SFT, 6 parallel 256K slots via q4_0 KV. A/B vs qwen36-27b-q8-6x256k-h100."
 
 [[recipes]]
 name        = "qwen36-27b-q8-h100"
