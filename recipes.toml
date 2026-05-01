@@ -227,6 +227,28 @@ parallel    = 4
 kv_type     = "q8_0"
 description = "Dense 27B full Q8 quality. Dense KV is fat — 4×128K sweet spot."
 
+[[recipes]]
+name        = "qwen36-27b-q8-4x256k-6000pro"
+label       = "Qwen3.6-27B  Q8_K  4×256K  q8 KV"
+gpu         = "6000pro"
+model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+model_quant = "UD-Q8_K_XL"
+ctx         = 1048576
+parallel    = 4
+kv_type     = "q8_0"
+description = "Dense 27B lossless Q8 at 256K. 4 slots × 256K, ~29 GiB weights + ~59 GiB KV = ~88 GiB. ~8 GiB headroom on 96GB."
+
+[[recipes]]
+name        = "qwen36-27b-q8-8x256k-6000pro"
+label       = "Qwen3.6-27B  Q8_K  8×256K  q4 KV"
+gpu         = "6000pro"
+model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+model_quant = "UD-Q8_K_XL"
+ctx         = 2097152
+parallel    = 8
+kv_type     = "q4_0"
+description = "Dense 27B Q8 weights, q4_0 KV for max slots. 8 slots × 256K, ~29 GiB weights + ~59 GiB KV = ~88 GiB. Same headroom, double the parallelism."
+
 # ── datacenter recipes — H100 SXM 80GB (SM90) ────────────────────────────────
 
 [[recipes]]
