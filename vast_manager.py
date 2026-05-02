@@ -58,8 +58,18 @@ except ImportError:
     def format_rate_status(info):
         return str(info)
 
+# Endpoint proxy resolver (optional — graceful fallback)
+try:
+    from endpoint_proxy import resolve_target
+except ImportError:
+    # Fallback if proxy module unavailable
+    def resolve_target():
+        return f"http://127.0.0.1:{LOCAL_PORT}/v1", None, "vast-gguf"
+
 console    = Console()
-LOCAL_PORT = 8800
+LOCAL_PORT       = 8800     # SSH tunnel local port (remote 8000 → local 8800)
+LOCAL_TUNNEL_PORT = 8800    # Same as LOCAL_PORT, used by proxy_status_detail
+PROXY_PORT       = 8888     # Endpoint proxy listen port
 
 MENU_STYLE = Style([
     ("qmark",       "fg:#7c6af7 bold"),
@@ -2869,7 +2879,7 @@ def proxy_status_detail():
     try:
         result = subprocess.run(
             ["curl", "-s", "--max-time", "3",
-             f"http://127.0.0.1:{VAST_TUNNEL_PORT}/v1/models"],
+             f"http://127.0.0.1:{LOCAL_TUNNEL_PORT}/v1/models"],
             capture_output=True, text=True, timeout=5
         )
         vast_ok = result.returncode == 0
@@ -2900,7 +2910,7 @@ def proxy_status_detail():
     vast_status = "[green]available[/green]" if vast_ok else "[red]unreachable[/red]"
     togeth_status = "[green]available[/green]" if togeth_ok else "[yellow]not configured[/yellow]"
 
-    t.add_row("Vast GGUF", vast_status, f"http://127.0.0.1:{VAST_TUNNEL_PORT}/v1")
+    t.add_row("Vast GGUF", vast_status, f"http://127.0.0.1:{LOCAL_TUNNEL_PORT}/v1")
     t.add_row("Together AI", togeth_status, "https://api.together.ai/v1")
 
     console.print(Panel(t, border_style="#3d3d5c"))

@@ -3,7 +3,7 @@
 endpoint_proxy.py — Unified local OpenAI-compatible endpoint.
 
 Forwards all requests to whichever provider is currently active:
-- Vast GGUF instances (via SSH tunnel at localhost:8000)
+- Vast GGUF instances (via SSH tunnel at localhost:8800)
 - Together AI managed endpoints (direct API calls)
 - Any custom OpenAI-compatible backend
 
@@ -37,8 +37,8 @@ PROVIDER_DIR = Path.home() / ".vastai-gguf"
 PROXY_PID   = Path("/tmp/vastai-gguf-proxy.pid")
 PORT        = int(os.environ.get("PROXY_PORT", "8888"))
 
-# Default Vast tunnel port (set by vast_tunnel.sh)
-VAST_TUNNEL_PORT = 8000
+# Local SSH tunnel port (vast_tunnel.sh forwards remote:8000 → local:8800)
+LOCAL_TUNNEL_PORT = 8800
 
 
 # ── endpoint resolver ────────────────────────────────────────────────────────
@@ -79,8 +79,8 @@ def resolve_target():
         except Exception as e:
             print(f"[proxy] Failed to parse active endpoint: {e}", file=sys.stderr)
 
-    # Fall back to Vast tunnel (localhost:8000)
-    return f"http://127.0.0.1:{VAST_TUNNEL_PORT}/v1", None, "vast-gguf"
+    # Fall back to Vast tunnel (localhost:8800)
+    return f"http://127.0.0.1:{LOCAL_TUNNEL_PORT}/v1", None, "vast-gguf"
 
 
 # ── request forwarder ────────────────────────────────────────────────────────
@@ -113,6 +113,15 @@ async def forward_request(request: web.Request) -> web.Response:
             # Read body (for POST/PUT/PATCH)
             body = await request.read() if method in ("POST", "PUT", "PATCH") else None
 
+            # Determine streaming based on JSON body content-type
+            use_streaming = False
+            if body and method == "POST":
+                try:
+                    req_json = json.loads(body)
+                    use_streaming = req_json.get("stream", False)
+                except (json.JSONDecodeError, Exception):
+                    pass
+
             if method == "GET":
                 async with session.get(target_url, headers=headers) as resp:
                     return await build_response(resp)
@@ -121,7 +130,10 @@ async def forward_request(request: web.Request) -> web.Response:
                     return await build_response(resp)
             else:
                 async with session.post(target_url, headers=headers, data=body) as resp:
-                    return await build_streaming_response(resp)
+                    if use_streaming:
+                        return await build_streaming_response(resp)
+                    else:
+                        return await build_response(resp)
 
     except ConnectionRefusedError:
         return web.json_response(
@@ -168,15 +180,16 @@ async def build_streaming_response(resp):
     headers["X-Provider"] = resolve_target()[2]
     headers["Access-Control-Allow-Origin"] = "*"
 
-    # Use web.Response with streaming body for SSE
-    async def stream():
-        async for chunk in resp.content.iter_chunked(4096):
-            yield chunk
-
-    return web.StreamResponse(
+    sresp = web.StreamResponse(
         status=resp.status,
         headers=headers,
     )
+    await sresp.prepare()  # Required before writing chunks
+
+    async for chunk in resp.content.iter_chunked(4096):
+        await sresp.write(chunk)
+
+    return sresp
 
 
 # ── management endpoints ─────────────────────────────────────────────────────
@@ -255,7 +268,7 @@ async def list_providers(request: web.Request) -> web.Response:
     vast_ok = False
     try:
         async with ClientSession(timeout=ClientTimeout(3)) as session:
-            async with session.get(f"http://127.0.0.1:{VAST_TUNNEL_PORT}/v1/models") as r:
+            async with session.get(f"http://127.0.0.1:{LOCAL_TUNNEL_PORT}/v1/models") as r:
                 vast_ok = r.status == 200
     except Exception:
         pass
@@ -306,7 +319,7 @@ async def list_providers(request: web.Request) -> web.Response:
         "active": provider,
         "target": base_url,
         "providers": {
-            "vast-gguf": {"available": vast_ok, "url": f"http://127.0.0.1:{VAST_TUNNEL_PORT}/v1"},
+            "vast-gguf": {"available": vast_ok, "url": f"http://127.0.0.1:{LOCAL_TUNNEL_PORT}/v1"},
             "together": {"available": together_ok, "url": "https://api.together.ai/v1"},
         },
         "local_instances": local_instances,
