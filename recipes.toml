@@ -738,3 +738,57 @@ price_output   = 0.44
 description    = "Reasoning-focused model. Good for complex problem solving."
 
 # ── add your own recipes below ────────────────────────────────────────────────
+# ── local endpoint recipes ─────────────────────────────────────────────────────
+# These run llama-server on your own hardware (no Vast.ai).
+# Edit model_path to point to your GGUF files.
+# Binary is auto-discovered from PATH and ~/llama.cpp/build*/bin/.
+#
+# Supported backends: vulkan, rocm, cuda, cpu (auto-detected from binary)
+
+[[recipes]]
+name           = "local-qwen35-9b"
+provider       = "local"
+label          = "Qwen3.5-9B  Q4_K_M  (local Vulkan)"
+model_path     = "~/models/Qwen3.5-9B-Q4_K_M.gguf"
+port           = 8100
+ctx            = 32768
+parallel       = 1
+kv_type        = "q8_0"
+n_gpu_layers   = 999
+backend        = "vulkan"
+mode           = "thinking"
+description    = "Qwen3.5-9B on AMD iGPU via Vulkan backend. ~4 GB VRAM."
+
+[[recipes]]
+name           = "local-qwen35-9b-coding"
+provider       = "local"
+label          = "Qwen3.5-9B  Q4_K_M  coding preset"
+model_path     = "~/models/Qwen3.5-9B-Q4_K_M.gguf"
+port           = 8101
+ctx            = 65536
+parallel       = 1
+kv_type        = "q8_0"
+n_gpu_layers   = 999
+backend        = "vulkan"
+mode           = "coding"
+description    = "Same model, coding sampling preset (lower temp), larger ctx."
+
+[[recipes]]
+name           = "local-carnice-9b"
+provider       = "local"
+label          = "Carnice-9B  Q6_K  (local Vulkan)"
+model_path     = "~/models/carnice-9b/Carnice-9b-Q6_K.gguf"
+port           = 8102
+ctx            = 32768
+parallel       = 1
+kv_type        = "q8_0"
+n_gpu_layers   = 999
+backend        = "vulkan"
+mode           = "thinking"
+description    = "Carnice-9B Q6_K local. Hermes-tuned reasoning model."
+
+# ── local config (optional) ───────────────────────────────────────────────────
+[local]
+# Directory to scan for GGUF models during auto-discovery.
+# Comment out or remove to use default ~/models/.
+# models_dir = "~/models"
