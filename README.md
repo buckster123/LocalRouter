@@ -3,7 +3,7 @@
 Local compute & endpoint manager for private LLM inference. Run GGUF models on your own hardware, rent Vast.ai GPUs, or connect managed providers — all through one interactive TUI with a transparent local proxy server.
 
 ```
-qwen36-vast/                  # renamed → LocalRouter
+LocalRouter/                  # renamed → LocalRouter
   vast_manager.py             ← interactive TUI (the main thing)
   recipes.toml                ← model + GPU recipe catalogue (edit this)
   endpoint_proxy.py           ← local proxy server (localhost:8888)
