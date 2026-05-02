@@ -662,3 +662,79 @@ description = "MoE 35B Q8, 10 slots × 256K on 192GB. ~38 GiB weights + ~110 GiB
 # parallel    = 1
 # kv_type     = "q8_0"
 # description = "Llama 3.3 70B at Q4 on H100."
+
+# ── Together AI managed recipes ────────────────────────────────────────────────
+# These are "managed" endpoints — no GPU to rent, pay per token.
+# Select them via the Launch wizard → Together AI compute type.
+
+[[recipes]]
+name           = "together-llama3.1-8b"
+provider       = "together"
+label          = "Llama 3.1 8B ($0.18/M tokens)"
+model_id       = "meta-llama/Llama-3.1-8B-Instruct-Turbo"
+ctx            = 131072
+price_input    = 0.18
+price_output   = 0.18
+description    = "Fastest/cheapest on Together. Great for quick tasks."
+
+[[recipes]]
+name           = "together-qwen-coder-32b"
+provider       = "together"
+label          = "Qwen2.5 Coder 32B ($0.44/M tokens)"
+model_id       = "Qwen/Qwen2.5-Coder-32B-Instruct-Turbo"
+ctx            = 131072
+price_input    = 0.44
+price_output   = 0.44
+description    = "Code-specialized model. Strong on programming tasks."
+
+[[recipes]]
+name           = "together-llama3.3-70b"
+provider       = "together"
+label          = "Llama 3.3 70B ($0.88/M tokens)"
+model_id       = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+ctx            = 131072
+price_input    = 0.88
+price_output   = 0.88
+description    = "Flagship mid-size model. Excellent general performance."
+
+[[recipes]]
+name           = "together-qwen2.5-72b"
+provider       = "together"
+label          = "Qwen2.5 72B ($0.88/M tokens)"
+model_id       = "Qwen/Qwen2.5-72B-Instruct-Turbo"
+ctx            = 131072
+price_input    = 0.88
+price_output   = 0.88
+description    = "Best Chinese/English bilingual performance."
+
+[[recipes]]
+name           = "together-llama3.1-405b"
+provider       = "together"
+label          = "Llama 3.1 405B ($3.50/M tokens)"
+model_id       = "meta-llama/Llama-3.1-405B-Instruct-Turbo"
+ctx            = 131072
+price_input    = 3.50
+price_output   = 3.50
+description    = "Largest available on Together. Premium performance."
+
+[[recipes]]
+name           = "together-mixtral-8x7b"
+provider       = "together"
+label          = "Mixtral 8x7B ($0.60/M tokens)"
+model_id       = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+ctx            = 32768
+price_input    = 0.60
+price_output   = 0.60
+description    = "Mixture of experts. Good balance of speed and quality."
+
+[[recipes]]
+name           = "together-qwq-32b"
+provider       = "together"
+label          = "QwQ 32B Reasoning ($0.44/M tokens)"
+model_id       = "Qwen/QwQ-32B-Preview"
+ctx            = 32768
+price_input    = 0.44
+price_output   = 0.44
+description    = "Reasoning-focused model. Good for complex problem solving."
+
+# ── add your own recipes below ────────────────────────────────────────────────
