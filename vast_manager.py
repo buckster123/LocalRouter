@@ -41,6 +41,11 @@ HF_PIN     = ROOT / ".hf_pin"
 PROVIDER_DIR   = Path.home() / ".vastai-gguf"
 PROVIDER_CFG   = PROVIDER_DIR / "config.toml"
 
+# Local endpoint management
+LOCAL_INSTANCES  = PROVIDER_DIR / "local_instances"
+LOCAL_LOGS       = PROVIDER_DIR / "local_logs"
+LOCAL_PID_SUFFIX = ".pid"
+
 # Usage tracking / rate limiting (optional — graceful fallback)
 try:
     from usage_tracker import format_summary, check_rate_limit, format_rate_status
@@ -238,7 +243,7 @@ def test_together_connection(base_url, api_key):
     url = f"{base_url}/models"
     req = urllib.request.Request(url, headers={
         "Authorization": f"Bearer {api_key}",
-        "User-Agent": "vastai-gguf-launcher/1.0",
+        "User-Agent": "LocalRouter/1.0",
     })
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
@@ -453,7 +458,7 @@ def menu_together_models(provider_cfg):
     url = f"{base_url}/models"
     req = urllib.request.Request(url, headers={
         "Authorization": f"Bearer {api_key}",
-        "User-Agent": "vastai-gguf-launcher/1.0",
+        "User-Agent": "LocalRouter/1.0",
     })
 
     all_models = []
@@ -647,13 +652,22 @@ def activate_together_endpoint(provider_cfg, model_id):
 
 
 def get_active_endpoint():
-    """Get currently active endpoint (Vast instance or Together)."""
-    # Check Together endpoint first
+    """Get currently active endpoint (Vast instance, Together, or Local)."""
+    # Check explicit endpoint first (Together / Local)
     endpoint_file = ROOT / ".active_endpoint"
     if endpoint_file.exists():
         try:
             data = json.loads(endpoint_file.read_text())
-            if data.get("provider") == "together":
+            prov = data.get("provider")
+            if prov == "together":
+                return data
+            elif prov == "local":
+                # Validate PID is still alive
+                name = data.get("name", "")
+                if name and is_local_running(name):
+                    data["status"] = "running"
+                else:
+                    data["status"] = "stopped"
                 return data
         except Exception:
             pass
@@ -1021,7 +1035,7 @@ def check_together_rate_limits(provider_cfg):
     try:
         req = urllib.request.Request(url, headers={
             "Authorization": f"Bearer {api_key}",
-            "User-Agent": "vastai-gguf-launcher/1.0",
+            "User-Agent": "LocalRouter/1.0",
         })
         
         with urllib.request.urlopen(req, timeout=10) as r:
@@ -1140,6 +1154,395 @@ def _hf_token():
     except FileNotFoundError:
         return None
 
+def _expand_tilde(p):
+    return str(Path(p).expanduser().resolve())
+
+
+# ── local endpoint management ────────────────────────────────────────────────
+
+SAMPLING_PRESETS = {
+    "thinking":    ["--temp", "1.0", "--top-p", "0.95", "--min-p", "0.0", "--presence-penalty", "1.5"],
+    "coding":      ["--temp", "0.6", "--top-p", "0.95", "--min-p", "0.0", "--presence-penalty", "0.0"],
+    "nonthinking": ["--temp", "0.7", "--top-p", "0.80", "--min-p", "0.0", "--presence-penalty", "1.5",
+                    '--chat-template-kwargs', '{"enable_thinking":false}'],
+}
+
+
+def _ensure_local_dirs():
+    LOCAL_INSTANCES.mkdir(parents=True, exist_ok=True)
+    LOCAL_LOGS.mkdir(parents=True, exist_ok=True)
+
+
+def discover_local(models_dir=None):
+    """Auto-discover local llama.cpp binaries, GGUF models, and backend support.
+
+    Returns dict with keys: binaries[], models[], backends[].
+    """
+    result = {"binaries": [], "models": [], "backends": []}
+
+    # 1. Scan for llama-server binaries
+    search_paths = [
+        Path.home() / "llama.cpp",
+        Path.home() / "Projects" / "llama.cpp",
+        Path("/usr/local/bin"),
+    ]
+
+    # Also check PATH
+    for p in os.environ.get("PATH", "").split(":"):
+        search_paths.append(Path(p))
+
+    found_bins = set()
+    for base in search_paths:
+        if not base.exists():
+            continue
+        # Check common build dirs and bin dirs
+        candidates = [
+            base / "build" / "bin" / "llama-server",
+            base / "build-vulkan" / "bin" / "llama-server",
+            base / "build-rocm" / "bin" / "llama-server",
+            base / "llama-server",
+        ]
+        for c in candidates:
+            if c.exists() and c.is_file():
+                resolved = str(c.resolve())
+                if resolved not in found_bins:
+                    found_bins.add(resolved)
+                    result["binaries"].append({
+                        "path": resolved,
+                        "label": c.name,
+                    })
+
+    # 2. Detect backends by probing first binary
+    if result["binaries"]:
+        main_bin = result["binaries"][0]["path"]
+        help_out, _, rc = capture(f"{main_bin} --help 2>&1", timeout=5)
+        if rc == 0 and help_out:
+            backends = []
+            if "vulkan" in help_out.lower() or "--gpu-vk" in help_out.lower():
+                backends.append("vulkan")
+            if "cuda" in help_out.lower() or "--gpu" in help_out.lower():
+                backends.append("cuda")
+            if "hip" in help_out.lower() or "rocm" in help_out.lower():
+                backends.append("rocm")
+            # Always have CPU fallback
+            result["backends"] = backends if backends else ["cpu"]
+
+    # 3. Scan for GGUF models
+    scan_dirs = []
+    if models_dir:
+        scan_dirs.append(Path(models_dir).expanduser())
+    scan_dirs.extend([
+        Path.home() / "models",
+        Path.home() / ".cache" / "huggingface" / "hub",
+    ])
+
+    found_models = set()
+    for d in scan_dirs:
+        if not d.exists():
+            continue
+        try:
+            for gguf in d.rglob("*.gguf"):
+                # Skip mmproj and vocab files
+                if "mmproj" in str(gguf).lower() or "vocab" in str(gguf).lower():
+                    continue
+                resolved = str(gguf.resolve())
+                if resolved not in found_models:
+                    found_models.add(resolved)
+                    size_mb = gguf.stat().st_size / (1024 * 1024)
+                    result["models"].append({
+                        "path": resolved,
+                        "name": gguf.name,
+                        "size_mb": round(size_mb, 1),
+                    })
+        except PermissionError:
+            pass
+
+    # Sort models by size descending (larger = usually more interesting)
+    result["models"].sort(key=lambda m: -m["size_mb"])
+    return result
+
+
+def _get_local_server_args(recipe, binary_path):
+    """Convert a local recipe into llama-server CLI arguments.
+
+    Mirrors launch.sh env-to-args mapping.
+    """
+    args = [binary_path]
+
+    # Required
+    model_path = _expand_tilde(recipe.get("model_path", ""))
+    if not model_path or not Path(model_path).exists():
+        return None, f"Model not found: {recipe.get('model_path', '')}"
+    args.extend(["--model", model_path])
+
+    # Network
+    host = recipe.get("host", "127.0.0.1")
+    port = recipe.get("port", 8100)
+    args.extend(["--host", str(host), "--port", str(port)])
+
+    # Context & parallelism
+    ctx = int(recipe.get("ctx", 32768))
+    parallel = int(recipe.get("parallel", 1))
+    args.extend(["--ctx-size", str(ctx), "--parallel", str(parallel)])
+
+    # KV cache type
+    kv_type = recipe.get("kv_type", "q8_0")
+    args.extend(["--cache-type-k", kv_type, "--cache-type-v", kv_type])
+
+    # GPU offload
+    n_gpu_layers = int(recipe.get("n_gpu_layers", 999))
+    args.extend(["--n-gpu-layers", str(n_gpu_layers)])
+
+    # Standard flags (same as launch.sh)
+    args.extend(["--jinja", "--metrics"])
+    args.extend(["--flash-attn", "on"])
+
+    # Sampling preset
+    mode = recipe.get("mode", "thinking")
+    if mode in SAMPLING_PRESETS:
+        args.extend(SAMPLING_PRESETS[mode])
+
+    # Vision projector (optional)
+    mmproj = recipe.get("mmproj", "")
+    if mmproj:
+        mmproj_path = _expand_tilde(mmproj)
+        if Path(mmproj_path).exists():
+            args.extend(["--mmproj", mmproj_path])
+
+    return args, None
+
+
+def start_local_instance(recipe):
+    """Start a local llama-server instance from a recipe.
+
+    Returns (success: bool, message: str).
+    """
+    _ensure_local_dirs()
+
+    name = recipe.get("name", "local-default")
+
+    # Check if already running
+    pid_file = LOCAL_INSTANCES / f"{name}{LOCAL_PID_SUFFIX}"
+    if pid_file.exists():
+        try:
+            pid = int(pid_file.read_text().strip())
+            os.kill(pid, 0)  # Check alive
+            console.print(f"[yellow]Instance '{name}' already running (PID {pid}).[/yellow]")
+            return False, "Already running"
+        except (ProcessLookupError, ValueError):
+            pid_file.unlink()  # Stale PID
+
+    # Build command
+    binary = recipe.get("binary", "")
+    if not binary:
+        # Auto-discover, preferring the right backend
+        disc = discover_local()
+        if disc["binaries"]:
+            target_backend = recipe.get("backend", "").lower()
+            # Find a matching binary by path heuristic
+            preferred = None
+            for b in disc["binaries"]:
+                bp = b["path"].lower()
+                if "vulkan" in target_backend and "vulkan" in bp:
+                    preferred = b["path"]; break
+                elif "rocm" in target_backend or "hip" in target_backend:
+                    if "rocm" in bp or (preferred is None):
+                        preferred = b["path"]
+            binary = preferred or disc["binaries"][0]["path"]
+        else:
+            return False, "No llama-server binary found. Run 'Local → Configure' to scan."
+
+    args, err = _get_local_server_args(recipe, binary)
+    if err:
+        return False, err
+
+    # Backend env vars
+    env = os.environ.copy()
+    backend = recipe.get("backend", "").lower()
+    if "vulkan" in backend:
+        env["GGML_VK_VISIBLE_DEVICES"] = "0"
+    elif "rocm" in backend or "hip" in backend:
+        env["HIP_VISIBLE_DEVICES"] = "0"
+
+    # API key header (optional)
+    api_key = recipe.get("api_key", "")
+
+    # Start process
+    log_file = LOCAL_LOGS / f"{name}.log"
+    try:
+        proc = subprocess.Popen(
+            args,
+            stdout=open(log_file, "w"),
+            stderr=subprocess.STDOUT,
+            cwd=str(ROOT),
+            env=env,
+        )
+    except FileNotFoundError:
+        return False, f"Binary not found: {binary}"
+    except Exception as e:
+        return False, str(e)
+
+    # Write PID and metadata
+    pid_file.write_text(str(proc.pid))
+    port = recipe.get("port", 8100)
+    host = recipe.get("host", "127.0.0.1")
+
+    instance_meta = {
+        "name": name,
+        "pid": proc.pid,
+        "port": int(port),
+        "host": str(host),
+        "binary": binary,
+        "model_path": recipe.get("model_path", ""),
+        "backend": backend or "auto",
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "status": "starting",
+    }
+
+    # Write instance metadata
+    meta_file = LOCAL_INSTANCES / f"{name}.json"
+    meta_file.write_text(json.dumps(instance_meta, indent=2))
+
+    # Update .active_endpoint
+    endpoint_info = {
+        "provider": "local",
+        "name": name,
+        "host": str(host),
+        "port": int(port),
+        "pid": proc.pid,
+        "model_path": recipe.get("model_path", ""),
+        "activated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    if api_key:
+        endpoint_info["api_key"] = api_key
+
+    (ROOT / ".active_endpoint").write_text(json.dumps(endpoint_info, indent=2))
+
+    # Health check loop — poll until healthy or timeout
+    console.print(f"[dim]Starting llama-server (PID {proc.pid})...[/dim]")
+    base_url = f"http://{host}:{port}/v1"
+    for i in range(60):  # 60 seconds max
+        time.sleep(1)
+        if proc.poll() is not None:
+            # Process died — check log for error
+            try:
+                log_content = log_file.read_text()[-500:]
+            except Exception:
+                log_content = "(could not read log)"
+            return False, f"Process exited immediately. Last log: {log_content.strip()}"
+
+        # Health probe
+        try:
+            req = urllib.request.Request(f"{base_url}/models")
+            with urllib.request.urlopen(req, timeout=3) as r:
+                if r.status == 200:
+                    meta_file.write_text(json.dumps({**instance_meta, "status": "running"}, indent=2))
+
+                    model_label = Path(recipe.get("model_path", "")).name[:40]
+                    console.print(f"\n[green]✓ Local endpoint ready![/green]")
+                    console.print(f"  Instance: {name}")
+                    console.print(f"  Model:    {model_label}")
+                    console.print(f"  Endpoint: {base_url}")
+                    console.print(f"  PID:      {proc.pid} (port {port})")
+                    return True, "Started successfully"
+        except Exception:
+            continue
+
+    return False, f"Health check timed out after 60s. Check log: {log_file}"
+
+
+def stop_local_instance(name):
+    """Stop a local llama-server instance.
+
+    Returns (success: bool, message: str).
+    """
+    pid_file = LOCAL_INSTANCES / f"{name}{LOCAL_PID_SUFFIX}"
+    if not pid_file.exists():
+        return False, f"No PID file for '{name}'. Not running?"
+
+    try:
+        pid = int(pid_file.read_text().strip())
+        os.kill(pid, signal.SIGTERM)
+
+        # Wait up to 5 seconds for graceful shutdown
+        for _ in range(10):
+            try:
+                os.kill(pid, 0)
+                time.sleep(0.5)
+            except ProcessLookupError:
+                break
+        else:
+            # Force kill if still alive
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+        pid_file.unlink()
+
+        # Update metadata
+        meta_file = LOCAL_INSTANCES / f"{name}.json"
+        if meta_file.exists():
+            try:
+                meta = json.loads(meta_file.read_text())
+                meta["status"] = "stopped"
+                meta["stopped_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+                meta_file.write_text(json.dumps(meta, indent=2))
+            except Exception:
+                pass
+
+        # Clear .active_endpoint if this was the active one
+        ep_file = ROOT / ".active_endpoint"
+        if ep_file.exists():
+            try:
+                ep = json.loads(ep_file.read_text())
+                if ep.get("provider") == "local" and ep.get("name") == name:
+                    ep_file.unlink()
+            except Exception:
+                pass
+
+        return True, f"Stopped '{name}' (PID {pid})"
+
+    except ValueError:
+        pid_file.unlink()
+        return False, "Invalid PID file"
+    except ProcessLookupError:
+        pid_file.unlink()
+        return True, f"'{name}' was already stopped"
+
+
+def is_local_running(name):
+    """Check if a named local instance is running."""
+    pid_file = LOCAL_INSTANCES / f"{name}{LOCAL_PID_SUFFIX}"
+    if not pid_file.exists():
+        return False
+    try:
+        pid = int(pid_file.read_text().strip())
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, ValueError):
+        pid_file.unlink()  # Clean stale PID
+        return False
+
+
+def list_local_instances():
+    """List all local instance metadata."""
+    _ensure_local_dirs()
+    instances = []
+    for meta in sorted(LOCAL_INSTANCES.glob("*.json")):
+        try:
+            data = json.loads(meta.read_text())
+            name = data.get("name", meta.stem)
+            running = is_local_running(name)
+            data["running"] = running
+            if not running and data.get("status") == "starting":
+                data["status"] = "stopped"
+            instances.append(data)
+        except Exception:
+            pass
+    return instances
+
+
 # ── status panel ──────────────────────────────────────────────────────────────
 
 def show_status(provider_cfg=None):
@@ -1167,6 +1570,14 @@ def show_status(provider_cfg=None):
             if recipe_name:
                 cost_str = format_cost_comparison(1000, 500, provider_cfg)
                 t.add_row("est. cost", "$0.00x (per-token)")
+        elif prov == "local":
+            name = ep.get("name", "?")
+            port = ep.get("port", "?")
+            status_str = "[green]running[/green]" if ep.get("status") == "running" else "[red]stopped[/red]"
+            t.add_row("endpoint", f"[#7c6af7]Local[/] ({name})  {status_str}")
+            model_short = Path(ep.get("model_path", "")).name[:50] if ep.get("model_path") else "?"
+            t.add_row("model",    model_short)
+            t.add_row("port",     f"127.0.0.1:{port}")
         else:
             t.add_row("endpoint", "[#7c6af7]Vast GGUF[/] (self-hosted)")
 
@@ -1499,7 +1910,7 @@ def menu_watch_boot():
 
 def _hf_list_files(repo_id, token=None):
     url = f"https://huggingface.co/api/models/{repo_id}?blobs=true"
-    req = urllib.request.Request(url, headers={"User-Agent": "vastai-gguf-launcher/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "LocalRouter/1.0"})
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     try:
@@ -1709,6 +2120,239 @@ KV_TYPES = {
     "bf16  (full precision, most VRAM)":              "bf16",
 }
 
+
+# ── local endpoint menus ───────────────────────────────────────────────────────
+
+def menu_local_config():
+    """Configure local LLM settings and auto-discover hardware."""
+    while True:
+        hr("Local Endpoint Configuration")
+
+        disc = discover_local()
+
+        t = Table(box=box.SIMPLE_HEAVY, show_header=False, pad_edge=False)
+        t.add_column("key", style="dim", width=14)
+        t.add_column("value", style="bold")
+
+        if disc["binaries"]:
+            bins = "\n".join(f"  {b['path']}" for b in disc["binaries"][:3])
+            t.add_row("binaries", f"[green]{len(disc['binaries'])} found[/green]\n{bins}")
+        else:
+            t.add_row("binaries", "[red]none found[/red]")
+
+        if disc["backends"]:
+            backends = ", ".join(f"[{'green' if b == disc['backends'][0] else ''}]{b}[/{'green' if b == disc['backends'][0] else ''}]" for b in disc["backends"])
+            t.add_row("backends", backends)
+        else:
+            t.add_row("backends", "[yellow]cpu (fallback)[/yellow]")
+
+        if disc["models"]:
+            top = "\n".join(f"  {m['name'][:50]} ({m['size_mb']} MB)" for m in disc["models"][:3])
+            t.add_row("models", f"[green]{len(disc['models'])} found[/green]\n{top}")
+        else:
+            t.add_row("models", "[red]none found[/red]")
+
+        console.print(Panel(t, border_style="#3d3d5c"))
+
+        choice = questionary.select(
+            "Action:",
+            choices=[
+                "Refresh scan  — rescan for binaries and models",
+                "Set models dir  — custom directory to scan",
+                "← Back",
+            ],
+            style=MENU_STYLE,
+        ).ask()
+
+        if choice is None or choice == "← Back":
+            return
+
+        if choice.startswith("Refresh"):
+            disc = discover_local()
+            console.print(f"\n[dim]Scan complete.[/dim]")
+        elif choice.startswith("Set models"):
+            current = str(Path.home() / "models")
+            new_dir = questionary.text(
+                "Models directory (default ~/models):",
+                default=current,
+                style=MENU_STYLE,
+            ).ask()
+            if new_dir and new_dir.strip():
+                console.print(f"\n[dim]To use this permanently, add to recipes.toml:[/dim]")
+                console.print(f"  [local]\n  models_dir = \"{new_dir.strip()}\"")
+
+        press_enter()
+
+
+def menu_local_status(provider_cfg=None):
+    """View and manage running local instances."""
+    hr("Local Endpoint Status")
+
+    instances = list_local_instances()
+
+    if not instances:
+        console.print("[dim]No local instances configured. Run 'Local → Launch' to start one.[/dim]")
+        press_enter()
+        return
+
+    t = Table(box=box.SIMPLE_HEAVY, show_header=True)
+    t.add_column("Name", style="bold #7c6af7")
+    t.add_column("Status", width=10)
+    t.add_column("Port")
+    t.add_column("Model")
+    t.add_column("Started")
+
+    for inst in instances:
+        name = inst.get("name", "?")
+        status = inst.get("status", "?")
+        color = {"running": "green", "starting": "yellow", "stopped": "red"}.get(status, "dim")
+        model_short = Path(inst.get("model_path", "")).name[:35] if inst.get("model_path") else "?"
+        t.add_row(
+            name,
+            f"[{color}]{status}[/{color}]",
+            str(inst.get("port", "?")),
+            model_short,
+            inst.get("started_at", "?")[-8:] if inst.get("started_at") else "?",
+        )
+
+    console.print(Panel(t, border_style="#3d3d5c"))
+
+    # Action selection
+    names = [inst["name"] for inst in instances]
+    sel = questionary.select(
+        "Select instance:",
+        choices=ask_back(names),
+        style=MENU_STYLE,
+    ).ask()
+
+    if sel is None or sel == "← Back":
+        return
+
+    chosen = next((i for i in instances if i["name"] == sel), None)
+    if not chosen:
+        return
+
+    running = chosen.get("running", False)
+    action_choices = ["View logs"] + (["Stop instance"] if running else []) + ["← Back"]
+
+    action = questionary.select(
+        f"Action for '{sel}':",
+        choices=ask_back(action_choices),
+        style=MENU_STYLE,
+    ).ask()
+
+    if action is None or action == "← Back":
+        return
+
+    if action.startswith("View"):
+        log_file = LOCAL_LOGS / f"{sel}.log"
+        if not log_file.exists():
+            console.print("[yellow]No log file found.[/yellow]")
+        else:
+            hr(f"Logs for {sel}")
+            content = log_file.read_text()
+            console.print(content[-2000:] if len(content) > 2000 else content)
+    elif action.startswith("Stop"):
+        ok, msg = stop_local_instance(sel)
+        color = "green" if ok else "yellow"
+        console.print(f"\n[{color}]{msg}[/{color}]")
+
+    press_enter()
+
+
+def menu_local_launch(recipes):
+    """Launch wizard for local LLM endpoints."""
+    hr("Local Endpoint Launch Wizard")
+
+    # Filter local recipes
+    local_recipes = [r for r in recipes if r.get("provider") == "local"]
+
+    if not local_recipes:
+        console.print("[yellow]No local recipes defined.[/yellow]")
+        console.print("[dim]Add recipes with provider=local to recipes.toml, then try again.[/dim]")
+        press_enter()
+        return
+
+    # Auto-discover for defaults
+    disc = discover_local()
+
+    if not disc["binaries"]:
+        console.print("[red]No llama-server binary found on this system.[/red]")
+        console.print("[dim]Run 'Local → Configure' to scan, or install llama.cpp.[/dim]")
+        press_enter()
+        return
+
+    # Show available recipes
+    t = Table(box=box.SIMPLE_HEAVY, show_header=True)
+    t.add_column("Name", style="bold")
+    t.add_column("Label")
+    t.add_column("Model")
+    t.add_column("Port")
+    t.add_column("Status")
+
+    for r in local_recipes:
+        name = r.get("name", "?")
+        model_short = Path(r.get("model_path", "")).name[:35] if r.get("model_path") else "?"
+        port = r.get("port", "8100")
+        running = is_local_running(name)
+        status = "[green]running[/green]" if running else "[dim]stopped[/dim]"
+        t.add_row(name, r.get("label", name), model_short, str(port), status)
+
+    console.print(Panel(t, border_style="#3d3d5c"))
+
+    # Pick recipe
+    labels = [r.get("label", r["name"]) for r in local_recipes]
+    sel = questionary.select(
+        "Recipe to launch:",
+        choices=ask_back(labels),
+        style=MENU_STYLE,
+    ).ask()
+
+    if sel is None or sel == "← Back":
+        return
+
+    try:
+        idx = labels.index(sel)
+    except ValueError:
+        return
+
+    recipe = local_recipes[idx]
+    name = recipe.get("name", "?")
+
+    # Check if already running
+    if is_local_running(name):
+        console.print(f"[yellow]'{name}' is already running. Use 'Local → Status' to manage.[/yellow]")
+        press_enter()
+        return
+
+    # Confirm summary
+    hr()
+    t2 = Table(box=box.SIMPLE_HEAVY, show_header=False, pad_edge=False)
+    t2.add_column("k", style="dim", width=14)
+    t2.add_column("v", style="bold")
+    t2.add_row("name",     name)
+    t2.add_row("model",    recipe.get("model_path", "?"))
+    t2.add_row("ctx",      str(recipe.get("ctx", 32768)))
+    t2.add_row("parallel", str(recipe.get("parallel", 1)))
+    t2.add_row("kv type",  recipe.get("kv_type", "q8_0"))
+    t2.add_row("mode",     recipe.get("mode", "thinking"))
+    t2.add_row("port",     str(recipe.get("port", 8100)))
+    t2.add_row("backend",  recipe.get("backend", "auto"))
+    if recipe.get("description"):
+        t2.add_row("desc",   recipe["description"])
+
+    console.print(Panel(t2, title="[bold]Launch config[/bold]", border_style="#3d3d5c"))
+
+    if not questionary.confirm("Start this local instance?", style=MENU_STYLE, default=True).ask():
+        return
+
+    # Launch!
+    ok, msg = start_local_instance(recipe)
+    color = "green" if ok else "red"
+    console.print(f"\n[{color}]{msg}[/{color}]")
+    press_enter()
+
+
 def menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg=None):
     hr("Launch wizard")
 
@@ -1741,6 +2385,7 @@ def menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg=None):
         "Compute type:",
         choices=[
             "Vast GGUF   — rent a GPU, run your own llama.cpp instance",
+            "Local       — run llama-server on your own hardware",
             "Together AI — managed inference, pay per token",
             "← Back",
         ],
@@ -1748,6 +2393,10 @@ def menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg=None):
     ).ask()
 
     if provider_label is None or provider_label == "← Back":
+        return
+
+    if provider_label.startswith("Local"):
+        menu_local_launch(recipes)
         return
 
     if provider_label.startswith("Together"):
@@ -2305,10 +2954,48 @@ def menu_instances():
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
+def menu_local_dispatch(provider_cfg=None):
+    """Local endpoint management — umbrella menu."""
+    while True:
+        hr("Local Endpoints")
+
+        ep = get_active_endpoint()
+        if ep and ep.get("provider") == "local":
+            status_str = "[green]running[/green]" if ep.get("status") == "running" else "[yellow]stopped[/yellow]"
+            console.print(f"  Active: [bold]{ep.get('name', '?')}[/bold] ({status_str})  port {ep.get('port', '?')}")
+        else:
+            console.print("  [dim]No local endpoint active.[/dim]")
+
+        instances = list_local_instances()
+        running_count = sum(1 for i in instances if i.get("running"))
+
+        choice = questionary.select(
+            "Action:",
+            choices=[
+                f"Launch    — start a local instance ({len([r for r in load_config()[1] if r.get('provider') == 'local'])} recipes)",
+                "Status    — view / manage running instances",
+                "Configure — scan hardware, set options",
+                "← Back",
+            ],
+            style=MENU_STYLE,
+        ).ask()
+
+        if choice is None or choice == "← Back":
+            return
+
+        if choice.startswith("Launch"):
+            cfg, recipes, _, _ = load_config()
+            menu_local_launch(recipes)
+        elif choice.startswith("Status"):
+            menu_local_status(provider_cfg)
+        elif choice.startswith("Configure"):
+            menu_local_config()
+
+
 def banner(docker_img):
     console.print(Panel(
-        "[bold #7c6af7]vastai-gguf-launcher[/bold #7c6af7]  "
-        "[dim]GGUF model endpoints on Vast.ai GPUs[/dim]\n"
+        "[bold #7c6af7]LocalRouter[/bold #7c6af7]  \n"
+        "[dim]GGUF endpoint manager — local, Vast.ai & managed[/dim]\n"
         f"[dim]image: {docker_img}  |  recipes: recipes.toml[/dim]",
         border_style="#3d3d5c", padding=(0, 2),
     ))
@@ -2326,6 +3013,7 @@ def main():
             "What do you want to do?",
             choices=[
                 "Launch     — spin up a new instance or activate managed endpoint",
+                "Local      — manage local llama.cpp endpoints",
                 "Providers  — configure API keys and base URLs",
                 "Together   — browse Together AI models",
                 "Batch      — compare multiple providers/models side-by-side",
@@ -2345,6 +3033,7 @@ def main():
         if choice is None or choice.startswith("Exit"):
             console.print("[dim]bye[/dim]"); break
         elif choice.startswith("Launch"):     menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg)
+        elif choice.startswith("Local"):      menu_local_dispatch(provider_cfg)
         elif choice.startswith("Providers"):  menu_providers(provider_cfg)
         elif choice.startswith("Together"):   menu_together_models(provider_cfg)
         elif choice.startswith("Batch"):     menu_batch_compare(provider_cfg)

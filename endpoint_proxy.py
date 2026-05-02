@@ -69,6 +69,13 @@ def resolve_target():
                 auth = f"Bearer {api_key}" if api_key else None
                 return base_url, auth, provider
 
+            elif provider == "local":
+                host = data.get("host", "127.0.0.1")
+                port = data.get("port", 8100)
+                api_key = data.get("api_key", "")
+                auth = f"Bearer {api_key}" if api_key else None
+                return f"http://{host}:{port}/v1", auth, provider
+
         except Exception as e:
             print(f"[proxy] Failed to parse active endpoint: {e}", file=sys.stderr)
 
@@ -215,6 +222,27 @@ async def switch_provider(request: web.Request) -> web.Response:
             ep_file.unlink()
         return web.json_response({"status": "ok", "provider": "vast-gguf"})
 
+    elif provider_name == "local":
+        # Switch to a local instance by name
+        name = data.get("name", "")
+        if not name:
+            return web.json_response({"error": "Missing 'name' for local provider"}, status=400)
+        instances_dir = ROOT.parent / ".vastai-gguf" / "local_instances"
+        meta_file = instances_dir / f"{name}.json"
+        if not meta_file.exists():
+            return web.json_response({"error": f"Local instance '{name}' not found"}, status=404)
+        meta = json.loads(meta_file.read_text())
+        ep = {
+            "provider": "local",
+            "name": name,
+            "host": meta.get("host", "127.0.0.1"),
+            "port": meta.get("port", 8100),
+            "model_path": meta.get("model_path", ""),
+            "switched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        (ROOT / ".active_endpoint").write_text(json.dumps(ep, indent=2))
+        return web.json_response({"status": "ok", "provider": "local"})
+
     else:
         return web.json_response({"error": f"Unknown provider: {provider_name}"}, status=400)
 
@@ -246,6 +274,34 @@ async def list_providers(request: web.Request) -> web.Response:
         except Exception:
             pass
 
+    # Check local instances
+    local_instances = []
+    from pathlib import Path as P
+    instances_dir = ROOT.parent / ".vastai-gguf" / "local_instances"
+    if instances_dir.exists():
+        for meta_file in instances_dir.glob("*.json"):
+            try:
+                import json as j
+                meta = j.loads(meta_file.read_text())
+                name = meta.get("name", "")
+                port = meta.get("port", 0)
+                pid_file = instances_dir / f"{name}.pid"
+                running = False
+                if pid_file.exists():
+                    try:
+                        import os as o
+                        o.kill(int(pid_file.read_text().strip()), 0)
+                        running = True
+                    except Exception:
+                        pass
+                local_instances.append({
+                    "name": name,
+                    "port": port,
+                    "running": running,
+                })
+            except Exception:
+                pass
+
     return web.json_response({
         "active": provider,
         "target": base_url,
@@ -253,6 +309,7 @@ async def list_providers(request: web.Request) -> web.Response:
             "vast-gguf": {"available": vast_ok, "url": f"http://127.0.0.1:{VAST_TUNNEL_PORT}/v1"},
             "together": {"available": together_ok, "url": "https://api.together.ai/v1"},
         },
+        "local_instances": local_instances,
     })
 
 

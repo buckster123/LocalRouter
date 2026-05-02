@@ -79,6 +79,9 @@ def log_completion(provider, model_id="", prompt_tokens=0, completion_tokens=0,
         hours_needed = (prompt_tokens + completion_tokens) / (tps * 3600)
         rate = VAST_HOURLY.get(gpu_tier or "", VAST_AVG_HOURLY)
         cost = hours_needed * rate
+    elif provider == "local":
+        # Local inference is free (already paid for hardware)
+        cost = 0.0
 
     entry = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -182,7 +185,7 @@ def format_summary(hours=24):
                  f"{data['total_tokens']} tokens | {data['completions']} completions")
 
     for provider, info in data["by_provider"].items():
-        label = {"together": "Together AI", "vast-gguf": "Vast GGUF"}.get(provider, provider)
+        label = {"together": "Together AI", "vast-gguf": "Vast GGUF", "local": "Local"}.get(provider, provider)
         lines.append(f"  {label:<14} ${info['cost']:.4f}  ({info['tokens']} tok)")
 
     if data["by_model"]:
@@ -211,7 +214,7 @@ def check_rate_limit(base_url, api_key):
     url = f"{base_url}/models"
     req = urllib.request.Request(url, headers={
         "Authorization": f"Bearer {api_key}",
-        "User-Agent": "vastai-gguf-launcher/1.0",
+        "User-Agent": "LocalRouter/1.0",
     })
 
     try:
