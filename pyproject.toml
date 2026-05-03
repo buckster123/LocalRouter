@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "localrouter"
+version = "0.2.0"
+description = "GGUF endpoint manager — local, Vast.ai & managed inference"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Andre", email = "buckster123@users.noreply.github.com"},
+]
+keywords = ["llm", "gguf", "llama-cpp", "vast-ai", "together-ai", "inference", "endpoint-manager"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "questionary>=2.0.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+proxy = ["aiohttp>=3.9.0"]
+all = ["aiohttp>=3.9.0"]
+
+[project.scripts]
+localrouter = "localrouter.menus.main:main"
+
+[project.urls]
+Homepage = "https://github.com/buckster123/LocalRouter"
+Repository = "https://github.com/buckster123/LocalRouter"
+Issues = "https://github.com/buckster123/LocalRouter/issues"
+
+[tool.setuptools.packages.find]
+include = ["localrouter*"]
