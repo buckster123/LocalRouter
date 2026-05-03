@@ -1,71 +1,98 @@
-# LocalRouter
+<div align="center">
 
-Local compute & endpoint manager for private LLM inference. Run GGUF models on your own hardware, rent Vast.ai GPUs, or connect managed providers — all through one interactive TUI with a transparent local proxy server.
+# 🔀 LocalRouter
+
+**Your private LLM inference hub — local hardware, rented GPUs, or managed APIs.**
+**One TUI. One proxy. Zero vendor lock-in.**
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.2.0-orange.svg)](https://github.com/buckster123/LocalRouter/releases/tag/v0.2.0)
+
+<img src="docs/screenshot-main.png" alt="LocalRouter TUI — main menu" width="700">
+
+*The main menu — launch endpoints, browse models, run diagnostics, all from your terminal.*
+
+</div>
+
+---
+
+## Why LocalRouter?
+
+You've got a local GPU, a Vast.ai account, maybe a Together AI key — but juggling three different CLIs, SSH tunnels, and config files is a pain. LocalRouter unifies all of that behind a single interactive TUI and a transparent local proxy (`localhost:8888`). Your clients never know which backend is active.
 
 ```
-LocalRouter/                  # renamed → LocalRouter
-  vast_manager.py             ← interactive TUI (the main thing)
-  recipes.toml                ← model + GPU recipe catalogue (edit this)
-  endpoint_proxy.py           ← local proxy server (localhost:8888)
-  usage_tracker.py            ← cost tracking, rate limits, usage summaries
-  launch.sh                   ← runs inside container: downloads weights + starts server
-  vast_up.sh                  ← Vast.ai instance launcher (reads env set by TUI)
-  vast_down.sh                ← tear down Vast instance
-  smoke.sh                    ← endpoint smoke test (provider-aware validation)
-  Dockerfile                  ← prebuilt llama.cpp container image
-  tools/
-    vast_tunnel.sh            ← SSH tunnel manager (up/status/down/logs)
+pip install localrouter        # or: git clone + pip install -e .
+localrouter                    # launch the TUI
 ```
 
-## What it does
+That's it. No YAML configs to write, no Docker required for local mode, no separate tunnel scripts to remember.
 
-| Feature | Description |
-|---------|-------------|
-| **Local LLM** | Run llama-server on your own hardware — Vulkan, ROCm, CUDA, CPU |
-| **Vast.ai GGUF** | Launch private model endpoints on rented GPUs (RTX 4090/5090, H100, etc.) |
-| **Together AI** | Connect managed inference endpoints (229+ models, $0.18-$3.50/M tokens) |
-| **Local proxy** | Unified `localhost:8888` endpoint — clients don't care which provider is active |
-| **Usage tracking** | Per-provider cost logging (JSONL), session aggregation, rate limit monitoring |
-| **Batch compare** | Send the same prompt to multiple providers side-by-side with metrics |
-| **Launch wizard** | Guided workflow: GPU → recipe → geo → offer → spin up |
-| **Deep diagnostics** | SSH probes, download speed measurement, stall detection & recovery |
+---
 
-## Quick start
+## Features at a Glance
+
+| | Feature | What it does |
+|---|---------|-------------|
+| 🖥️ | **Local inference** | Run GGUF models on your own hardware — Vulkan, ROCm, CUDA, or CPU via llama.cpp |
+| ☁️ | **Vast.ai rental** | One-click GPU rental: pick a tier (4090, 5090, H100…) → recipe → geo → launch |
+| 🤝 | **Together AI** | Connect 229+ managed models, hot-swap providers mid-session |
+| 🔀 | **Unified proxy** | `localhost:8888` routes to whichever provider is active — swap backends, not code |
+| 📊 | **Usage tracking** | Per-provider cost logging (JSONL), session totals, rate-limit monitoring |
+| 🔍 | **Batch compare** | Send the same prompt to multiple providers, see results & metrics side-by-side |
+| 🧙 | **Launch wizard** | Guided flow: GPU tier → model recipe → geo preference → offer → spin up |
+| 🔧 | **Deep diagnostics** | SSH probes, download speed checks, stall detection & automatic recovery |
+
+---
+
+## Quick Start
+
+### 1. Install
 
 ```bash
+# From PyPI (when published) or from source:
 git clone https://github.com/buckster123/LocalRouter.git
 cd LocalRouter
+pip install -e .
 
-pip install questionary rich          # TUI deps (one-time)
-
-# For Vast.ai rental mode:
-pip install vastai                    # Vast.ai CLI (one-time)
-vastai set api-key <your-key>         # from console.vast.ai
+# Now you have the `localrouter` command globally
 ```
 
-### Local mode (no API keys needed)
+### 2. Pick your mode
 
-Point recipes at your GGUF models and run llama-server on your own GPU:
+<details>
+<summary><b>🖥️ Local mode</b> — no API keys, no cloud, just your GPU</summary>
+
+Point recipes at your GGUF models and go:
 
 ```bash
-# Make sure llama.cpp is compiled somewhere findable (~llama.cpp/build*/bin/)
-# And your .gguf files are in ~/models/ (auto-discovered)
-
-python3 vast_manager.py               # TUI → Local → Launch → pick recipe
+# Prerequisites: compiled llama.cpp + GGUF models in ~/models/
+localrouter                    # TUI → Local → Launch → pick recipe
 ```
 
-### Vast.ai mode
+The TUI auto-discovers:
+- `llama-server` binaries from `PATH` or `~/llama.cpp/build*/bin/`
+- GGUF files in `~/models/` (configurable)
+- Available backends (Vulkan, ROCm/HIP, CUDA, CPU)
 
-Configure your Vast API key and launch from the TUI:
+</details>
+
+<details>
+<summary><b>☁️ Vast.ai mode</b> — rent a GPU, get an endpoint</summary>
 
 ```bash
-vastai set api-key <your-key>
-python3 vast_manager.py               # TUI → Launch → Vast GGUF
+pip install vastai              # one-time
+vastai set api-key <your-key>   # from console.vast.ai
+localrouter                     # TUI → Launch → Vast GGUF
 ```
 
-### Together AI (managed)
+The wizard walks you through: GPU tier → model → geo → offer → launch.
+Use **Watch** to follow boot progress, **Tunnel** to forward locally.
 
-Optional — store your key for managed inference:
+</details>
+
+<details>
+<summary><b>🤝 Together AI</b> — managed inference, 229+ models</summary>
 
 ```bash
 mkdir -p ~/.vastai-gguf
@@ -76,18 +103,40 @@ base_url = "https://api.together.ai/v1"
 EOF
 ```
 
-The TUI detects this and enables **Browse Together Models** and hot-swapping.
+The TUI picks it up automatically — browse models, pin your choice, hot-swap.
 
-## Provider system
+</details>
 
-### Local (llama.cpp on your hardware)
+---
 
-Run models directly without Docker or rental compute. The TUI auto-discovers:
-- llama-server binaries from PATH, `~/llama.cpp/build*/bin/`
-- GGUF models in `~/models/` (configurable)
-- Available backends (Vulkan, ROCm/HIP, CUDA, CPU)
+## The Proxy — One Endpoint to Rule Them All
+
+```
+Client (curl / Python / Hermes / …)
+         │
+         ▼
+   localhost:8888          ← always the same URL
+         │
+    ┌────┴─────┐
+    │  Proxy   │          ← routes to active provider
+    └────┬─────┘
+         │
+   ┌─────┼──────────┐
+   ▼     ▼          ▼
+ Local  Vast.ai  Together
+```
+
+OpenAI-compatible API: `/v1/chat/completions`, `/v1/completions`, health check at `/health`.
+Switch providers from the TUI — clients don't change a thing.
+
+---
+
+## Recipe System
+
+Everything is driven by `recipes.toml` — 56 pre-configured recipes across 10 GPU tiers. No Python editing needed, just TOML:
 
 ```toml
+# Local GPU
 [[recipes]]
 name       = "local-qwen35-9b"
 provider   = "local"
@@ -95,129 +144,115 @@ label      = "Qwen3.5-9B  Q4_K_M  (local Vulkan)"
 model_path = "~/models/Qwen3.5-9B-Q4_K_M.gguf"
 port       = 8100
 ctx        = 32768
-backend    = "vulkan"     # vulkan / rocm / cuda / cpu
-mode       = "thinking"   # thinking / coding / nonthinking
-```
-
-TUI flow: **Local → Launch** → pick recipe → confirm config → start llama-server.  
-PID tracking, health checks, log viewing, and graceful shutdown built in.
-
-### Vast.ai (GGUF on rented GPU)
-
-The TUI guides you through GPU tier → model recipe → geo → offer selection → launch.
-While it boots, use **Watch** to follow progress. Once healthy, use **Tunnel → up**
-to forward the endpoint locally, then start the proxy server for transparent access.
-
-### Together AI (managed inference)
-
-Configure once in `~/.vastai-gguf/config.toml`. The TUI enables:
-- **Browse Together Models** — search 229+ models, pin your choice
-- **Provider → Switch to Together** — hotswap active provider
-- **Rate limit monitoring** — visible in Diagnose screen
-
-### Local proxy server
-
-The bundled `endpoint_proxy.py` runs on `localhost:8888` and forwards all requests
-to whichever provider is currently active (Local, Vast GGUF, or Together AI). This means:
-- Clients always point at the same URL — switch providers without code changes
-- OpenAI-compatible API format (`/v1/chat/completions`, `/v1/completions`, etc.)
-- Built-in health check at `localhost:8888/health`
-
-## Usage tracking
-
-Every completion is logged to `~/.vastai-gguf/usage.log` (JSONL format):
-
-```json
-{"ts":"2026-05-02T20:15:32","provider":"local","model":"Qwen3.5-9B-Q4_K_M.gguf",
- "prompt_tokens":42,"completion_tokens":128,"cost":0.0}
-```
-
-Local inference is tracked at $0 cost. View usage in the **Diagnose** screen, or:
-
-```bash
-python3 -c "from usage_tracker import format_summary; print(format_summary(24))"
-```
-
-## Configuring recipes
-
-Edit `recipes.toml` to add models. The TUI reads it at startup — no Python editing needed.
-
-### Local endpoint recipes:
-
-```toml
-[[recipes]]
-name       = "local-mistral-nemo"
-provider   = "local"
-label      = "Mistral Nemo 12B  Q6_K  (local)"
-model_path = "~/models/Mistral-Nemo-Instruct-Q6_K.gguf"
-port       = 8100
-ctx        = 32768
-parallel   = 2
-kv_type    = "q8_0"
 backend    = "vulkan"
-mode       = "thinking"
-```
 
-### Vast.ai GGUF recipes:
-
-```toml
+# Rented GPU via Vast.ai
 [[recipes]]
-name        = "mistral-nemo-q6-5090"
-label       = "Mistral Nemo 12B  Q6_K  64K ctx"
-gpu         = "5090"
-model_repo  = "bartowski/Mistral-Nemo-Instruct-2407-GGUF"
-model_quant = "Q6_K"
-ctx         = 65536
-parallel    = 2
-kv_type     = "q8_0"
-description = "Mistral Nemo at near-lossless quality, 2 concurrent slots."
-```
+name        = "qwen36-35b-h100"
+label       = "Qwen3.6-35B-A3B  Q8_0  128K ctx"
+gpu         = "h100"
+model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+model_quant = "Q8_0"
+ctx         = 131072
 
-### Together AI recipes:
-
-```toml
+# Managed API
 [[recipes]]
 name        = "together-qwen3-32b"
 provider    = "together"
 label       = "Qwen3-32B (managed)"
 model_id    = "Qwen/Qwen3-32B"
-description = "Fast, efficient Qwen3 for general tasks."
 ```
 
-## TUI menu overview
+---
+
+## TUI Menu
 
 | Menu item | What it does |
-|-----------|--------------|
-| **Launch** | Guided wizard: Local / Vast GGUF / Together AI → spin up |
-| **Local** | Manage local llama.cpp endpoints (launch/status/configure) |
-| **Watch** | Live boot watcher — polls status + log every 10s until healthy |
-| **Diagnose** | Deep diagnostics: usage stats, rate limits, SSH probes, stall detection |
-| **Instances** | List all active Vast instances, reattach `.last_instance` |
+|-----------|-------------|
+| **Launch** | Guided wizard: Local / Vast GGUF / Together → spin up |
+| **Local** | Manage local llama.cpp endpoints (launch / status / logs / stop) |
 | **Providers** | Configure API keys and base URLs |
 | **Together** | Browse Together AI models, pin a choice |
-| **Batch Compare** | Send same prompt to multiple providers side-by-side |
+| **Batch** | Compare multiple providers side-by-side |
+| **Watch** | Live boot watcher — polls status + logs until healthy |
+| **Diagnose** | Usage stats, rate limits, SSH probes, stall detection |
+| **Instances** | List active Vast instances, reattach |
 | **HF Browse** | Browse HuggingFace model files, pin a quant |
-| **Tunnel** | Manage SSH tunnel: up / status / down / logs |
-| **Proxy** | Start/stop the local transparent proxy on localhost:8888 |
-| **Smoke** | Run provider-aware smoke tests (health, completion, tool call, throughput) |
-| **Destroy** | Tear down current Vast instance (stops tunnel first) |
+| **Tunnel** | SSH tunnel: up / status / down / logs |
+| **Smoke** | Provider-aware smoke tests (health, completion, tools, throughput) |
+| **Proxy** | Start/stop the local proxy on `localhost:8888` |
+| **Destroy** | Tear down current Vast instance |
+
+<div align="center">
+<img src="docs/screenshot-running.png" alt="LocalRouter with active H100 instance" width="700">
+
+*Running with an H100 SXM on Vast.ai — tunnel up, endpoint healthy, 3 slots.*
+</div>
+
+---
+
+## Architecture
+
+```
+localrouter/
+├── menus/
+│   ├── main.py            # Main menu loop
+│   ├── local_menus.py     # Local llama.cpp management
+│   ├── vast_menus.py      # Vast.ai launch wizard
+│   ├── provider_menus.py  # Provider config & switching
+│   └── tool_menus.py      # Tunnel, proxy, diagnostics
+├── config.py              # Settings & recipe loading
+├── providers.py           # Provider abstraction layer
+├── proxy.py               # Transparent proxy server
+├── local_endpoint.py      # Local llama-server lifecycle
+├── vast_ops.py            # Vast.ai API operations
+├── hf_browser.py          # HuggingFace model browser
+├── cost.py                # Cost tracking & rate limits
+└── helpers.py             # Shared utilities
+```
+
+~3,600 lines of Python. 16 modules. `pip install -e .` and you're done.
+
+---
+
+## Usage Tracking
+
+Every completion is logged to `~/.vastai-gguf/usage.log` (JSONL):
+
+```json
+{"ts":"2026-05-02T20:15:32","provider":"vast_gguf","model":"Qwen3.6-35B-A3B-Q8_0",
+ "prompt_tokens":42,"completion_tokens":128,"cost":0.0012}
+```
+
+Local inference logs at $0. View stats in the **Diagnose** screen or programmatically:
+
+```bash
+python3 -c "from usage_tracker import format_summary; print(format_summary(24))"
+```
+
+---
 
 ## Security
 
-By default `launch.sh` binds llama-server to `127.0.0.1:8000` — the public port mapping
-exists on the host but nothing listens externally. Access is exclusively through the SSH
-tunnel (`tools/vast_tunnel.sh up`) or the local proxy server.
+- **Vast.ai**: `launch.sh` binds llama-server to `127.0.0.1:8000` inside the container. Access only via SSH tunnel (`tools/vast_tunnel.sh`) or the local proxy.
+- **Local**: Binds to `127.0.0.1` by default — never exposed to the network.
+- **Config**: API keys stored in `~/.vastai-gguf/config.toml` (not in the repo).
 
-For local endpoints, the process binds to `127.0.0.1` by default — never exposed to the network.
+---
 
 ## Requirements
 
-- Python 3.10+
-- `pip install questionary rich`
-- For Vast.ai: `vastai` CLI + API key from console.vast.ai
-- For local mode: compiled llama.cpp (Vulkan/ROCm/CUDA build) + GGUF models
-- Optional: Together AI API key from https://api.together.ai/settings
+| Dependency | Required for |
+|-----------|-------------|
+| Python 3.10+ | Everything |
+| `questionary`, `rich` | TUI (auto-installed) |
+| `vastai` CLI | Vast.ai mode only |
+| llama.cpp (compiled) | Local mode only |
+| Together AI API key | Together mode only |
+| `aiohttp` | Proxy server (`pip install localrouter[proxy]`) |
+
+---
 
 ## License
 
-MIT
+MIT — do what you want with it.
