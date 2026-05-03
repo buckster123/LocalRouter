@@ -84,7 +84,7 @@ def log_completion(provider, model_id="", prompt_tokens=0, completion_tokens=0,
         cost = 0.0
 
     entry = {
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "epoch": time.time(),
         "provider": provider,
         "model_id": model_id,
@@ -235,7 +235,7 @@ def check_rate_limit(base_url, api_key):
             rate_info["models_available"] = len(models)
 
             return rate_info or {"status": "ok", "models_available": 0}
-    except urllib.error.HTTPError as e:
+    except urllib.request.HTTPError as e:  # HTTPError lives in urllib.request too
         if e.code == 429:
             retry_after = e.headers.get("Retry-After", "?")
             return {"error": "rate_limited", "retry_after": retry_after}

@@ -94,14 +94,17 @@ case "${MODE}" in
     thinking)
         SAMPLE_ARGS="--temp 1.0 --top-p 0.95 --top-k 20 --min-p 0.0 --presence-penalty 1.5"
         TPL_KW=""
+        TPL_KW_JSON=""
         ;;
     coding)
         SAMPLE_ARGS="--temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0 --presence-penalty 0.0"
         TPL_KW=""
+        TPL_KW_JSON=""
         ;;
     nonthinking)
         SAMPLE_ARGS="--temp 0.7 --top-p 0.80 --top-k 20 --min-p 0.0 --presence-penalty 1.5"
-        TPL_KW='--chat-template-kwargs {"enable_thinking":false}'
+        TPL_KW='--chat-template-kwargs' 
+TPL_KW_JSON='{"enable_thinking":false}'
         ;;
     *)
         die "MODE must be thinking|coding|nonthinking, got: ${MODE}"
@@ -162,5 +165,5 @@ exec llama-server \
     --parallel "${PARALLEL}" \
     --jinja \
     --metrics \
-    --flash-attn on \
-    ${SAMPLE_ARGS} ${TPL_KW} ${EXTRA_ARGS}
+    --flash-attn \
+    ${SAMPLE_ARGS} ${TPL_KW} ${TPL_KW_JSON:+"$TPL_KW_JSON"} ${EXTRA_ARGS}

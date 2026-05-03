@@ -604,7 +604,7 @@ kv_type     = "q8_0"
 description = "72B dense Q6 on H200 141GB. ~57 GiB weights + ~30 GiB KV. Very fast."
 
 [[recipes]]
-name        = "qwen36-35b-moe-q8-6slot-h200"
+name = "qwen36-35b-moe-q8-8slot-h200"
 label       = "Qwen3.6-35B-A3B MoE  Q8_K  8×256K"
 gpu         = "h200-sxm"
 model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"

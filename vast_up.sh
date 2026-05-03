@@ -34,7 +34,7 @@ GPU="${GPU:-5090}"
 MODEL="${MODEL:-dense}"
 KV_TYPE="${KV_TYPE:-q8_0}"
 MODE="${MODE:-thinking}"
-MIN_DISK_GB="${MIN_DISK_GB:-60}"
+MIN_DISK_GB="${MIN_DISK_GB:-}"  # set per-GPU below if not overridden
 PARALLEL="${PARALLEL:-}"
 IMAGE_TYPE="${IMAGE_TYPE:-prebuilt}"
 MIN_CUDA="${MIN_CUDA:-12.8}"
@@ -60,6 +60,9 @@ if [ -z "${MAX_PRICE:-}" ]; then
         *)                 MAX_PRICE="0.55" ;;
     esac
 fi
+
+# Global disk default — applies if neither env nor GPU tier set it
+MIN_DISK_GB="${MIN_DISK_GB:-60}"
 
 # ── model defaults (for direct invocation with named presets) ──────────────────
 # Manager always passes MODEL_REPO/MODEL_QUANT/CTX explicitly so this block
@@ -126,6 +129,9 @@ case "${MODEL}_${GPU}" in
         PARALLEL="${PARALLEL:-1}"
         ;;
 esac
+
+# Global KV_TYPE default — applies if neither env nor preset set it
+KV_TYPE="${KV_TYPE:-q8_0}"
 
 # ── GPU name filter for offer search ──────────────────────────────────────────
 # VAST_NAMES env (space-separated) takes priority — set by manager from recipes.toml.
