@@ -167,6 +167,11 @@ REQUIRED_RECIPE_FIELDS_VAST = {"name", "label", "gpu", "model_repo", "model_quan
 REQUIRED_RECIPE_FIELDS_LOCAL = {"name", "label", "model_path", "port"}
 REQUIRED_RECIPE_FIELDS_TOGETHER = {"name", "label", "model_id"}
 REQUIRED_TIER_FIELDS = {"vast_names", "label", "max_price"}
+# Optional recipe fields that the editor wizard should know about
+OPTIONAL_RECIPE_FIELDS_VAST = {
+    "parallel", "kv_type", "min_disk_gb", "image_type", "description",
+    "llama_cpp_repo", "llama_cpp_ref",  # custom llama.cpp fork/branch
+}
 
 
 def validate_recipe(recipe: dict, gpu_tiers: dict) -> list[str]:

@@ -290,6 +290,10 @@ def menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg=None):
     t.add_row("Offer ID",   offer_id or "auto-select")
     t.add_row("Image type", f"[{'green' if image_type == 'prebuilt' else 'yellow'}]{image_type}[/]  {cold_start_estimate(image_type)}")
     t.add_row("Image",      docker_img)
+    if chosen_recipe.get("llama_cpp_repo") or chosen_recipe.get("llama_cpp_ref"):
+        repo = chosen_recipe.get("llama_cpp_repo", "ggml-org/llama.cpp")
+        ref = chosen_recipe.get("llama_cpp_ref", "master")
+        t.add_row("llama.cpp", f"[yellow]{repo} @ {ref}[/yellow]")
     t.add_row("HOST",       "[green]127.0.0.1[/green]  (tunnel-only)")
 
     # Add cost comparison if provider_cfg is available
@@ -331,6 +335,12 @@ def menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg=None):
         env["MMPROJ"] = mmproj_val
     if offer_id:
         env["OFFER_ID"] = offer_id
+
+    # Custom llama.cpp repo/branch (for models needing unmerged PRs, e.g. DSv4)
+    if chosen_recipe.get("llama_cpp_repo"):
+        env["LLAMA_CPP_REPO"] = chosen_recipe["llama_cpp_repo"]
+    if chosen_recipe.get("llama_cpp_ref"):
+        env["LLAMA_CPP_REF"] = chosen_recipe["llama_cpp_ref"]
 
     hr("Launching...")
     r = subprocess.run(["bash", str(ROOT / "vast_up.sh")], cwd=ROOT, env=env)

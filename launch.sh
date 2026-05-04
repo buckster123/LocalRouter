@@ -19,6 +19,9 @@
 #   MODELS_DIR       default /workspace/models
 #   MMPROJ           F16 to enable vision
 #   PORT, HOST       default 8000, 127.0.0.1
+#   LLAMA_CPP_REPO   custom llama.cpp fork (default: ggml-org/llama.cpp)
+#   LLAMA_CPP_REF    branch/tag/commit to build from (default: master)
+#                    Use for models needing unmerged PRs, e.g. DeepSeek V4
 
 set -euo pipefail
 
@@ -43,6 +46,10 @@ HOST="${HOST:-127.0.0.1}"
 if [ "${IMAGE_TYPE}" = "builder" ] && [ ! -x /usr/local/bin/llama-server ]; then
     log "==> builder image: no pre-compiled llama-server — detecting GPU arch..."
 
+    # Custom repo/branch support (for models needing unmerged PRs)
+    LLAMA_CPP_REPO="${LLAMA_CPP_REPO:-ggml-org/llama.cpp}"
+    LLAMA_CPP_REF="${LLAMA_CPP_REF:-master}"
+
     # Get compute capability from nvidia-smi, strip the dot: "9.0" → "90"
     RAW_CAP="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ')"
     if [ -z "${RAW_CAP}" ]; then
@@ -60,10 +67,18 @@ if [ "${IMAGE_TYPE}" = "builder" ] && [ ! -x /usr/local/bin/llama-server ]; then
     SRC_DIR="/opt/llama.cpp"
     BUILD_DIR="${SRC_DIR}/build"
 
-    # Source was cloned into the image at build time — just run cmake
+    # Source may be cached in image — re-clone if repo/branch differs or missing
     if [ ! -d "${SRC_DIR}" ]; then
-        log "    llama.cpp source not found in image — cloning..."
-        git clone --depth 1 https://github.com/ggml-org/llama.cpp.git "${SRC_DIR}"
+        log "    cloning https://github.com/${LLAMA_CPP_REPO}.git (ref: ${LLAMA_CPP_REF})..."
+        git clone --depth 1 --branch "${LLAMA_CPP_REF}" \
+            "https://github.com/${LLAMA_CPP_REPO}.git" "${SRC_DIR}"
+    elif [ "${LLAMA_CPP_REPO}" != "ggml-org/llama.cpp" ] || [ "${LLAMA_CPP_REF}" != "master" ]; then
+        # Custom repo/branch requested but image has default source — re-clone
+        log "    custom repo/branch requested — re-cloning..."
+        log "    repo: ${LLAMA_CPP_REPO}  ref: ${LLAMA_CPP_REF}"
+        rm -rf "${SRC_DIR}"
+        git clone --depth 1 --branch "${LLAMA_CPP_REF}" \
+            "https://github.com/${LLAMA_CPP_REPO}.git" "${SRC_DIR}"
     fi
 
     log "    configuring for SM${SM}..."
@@ -134,16 +149,21 @@ else
     log "model already present in ${TARGET_DIR}, skipping fetch"
 fi
 
-# ── locate weights ─────────────────────────────────────────────────────────────
-MODEL_FILE="$(ls -1 "${TARGET_DIR}" | grep -iE "${MODEL_QUANT}.*\.gguf$" | grep -v 'mmproj' | sort | head -n1 || true)"
+# ── locate weights ─────────────────────────────────────────────────────────
+# Handles both single-file and split GGUFs.
+# Split files: llama-server needs the first shard (e.g. -00001-of-00023.gguf)
+# Some repos put shards in subdirectories (e.g. Q2_K/model-Q2_K.gguf-00001-of-N)
+MODEL_FILE="$(find "${TARGET_DIR}" -maxdepth 2 -name "*.gguf" \
+    | grep -iE "${MODEL_QUANT}" | grep -v 'mmproj' | sort | head -n1 || true)"
 [ -n "${MODEL_FILE}" ] || die "no .gguf matching '${MODEL_QUANT}' in ${TARGET_DIR}"
-MODEL_PATH="${TARGET_DIR}/${MODEL_FILE}"
+MODEL_PATH="${MODEL_FILE}"   # find returns full path
 
 MMPROJ_ARGS=""
 if [ -n "${MMPROJ:-}" ]; then
-    MMPROJ_FILE="$(ls -1 "${TARGET_DIR}" | grep -iE "mmproj-${MMPROJ}.*\.gguf$" | head -n1 || true)"
+    MMPROJ_FILE="$(find "${TARGET_DIR}" -maxdepth 2 -name "*.gguf" \
+        | grep -iE "mmproj-${MMPROJ}" | head -n1 || true)"
     [ -n "${MMPROJ_FILE}" ] || die "MMPROJ requested but no mmproj file found"
-    MMPROJ_ARGS="--mmproj ${TARGET_DIR}/${MMPROJ_FILE}"
+    MMPROJ_ARGS="--mmproj ${MMPROJ_FILE}"
 fi
 
 # ── launch ─────────────────────────────────────────────────────────────────────

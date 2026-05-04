@@ -25,6 +25,8 @@
 #   kv_type      q8_0 | q4_0 | bf16 (default q8_0)
 #   min_disk_gb  override tier default disk for heavy recipes
 #   image_type   override tier default image type
+#   llama_cpp_repo  custom llama.cpp fork (user/repo) for unmerged model support
+#   llama_cpp_ref   branch/tag/commit of the custom fork (default: master)
 #   description  free text shown in TUI
 
 # ── docker images ─────────────────────────────────────────────────────────────
@@ -167,6 +169,109 @@ min_disk_gb = 800
 image_type  = "builder"
 vram_gb     = 192
 num_gpus    = 4
+
+# ── DeepSeek V4 Flash recipes (284B / 13B active, MoE, 1M ctx) ──────────────
+# Requires llama.cpp with DSv4 support — built from fairydreaming's DSA branch.
+# NOTE: llama_cpp_repo/ref tell launch.sh to clone+compile from this fork.
+# When DSv4 support merges to llama.cpp master, remove these two fields.
+
+[[recipes]]
+name            = "dsv4-flash-q2k-2xh100"
+label           = "DSv4-Flash 284B  Q2_K  128K ctx  (2×H100)"
+gpu             = "h100-sxm-2x"
+model_repo      = "Preyazz/DeepSeek-V4-Flash-GGUF"
+model_quant     = "Q2_K"
+ctx             = 131072
+parallel        = 1
+kv_type         = "q8_0"
+image_type      = "builder"
+llama_cpp_repo  = "fairydreaming/llama.cpp"
+llama_cpp_ref   = "deepseek-dsa"
+description     = "DSv4-Flash Q2_K (96 GB) on 2×H100 (160 GB). Lightest quant, fits with KV headroom."
+
+[[recipes]]
+name            = "dsv4-flash-q3k-2xh100"
+label           = "DSv4-Flash 284B  Q3_K_M  128K ctx  (2×H100)"
+gpu             = "h100-sxm-2x"
+model_repo      = "Preyazz/DeepSeek-V4-Flash-GGUF"
+model_quant     = "Q3_K_M"
+ctx             = 131072
+parallel        = 1
+kv_type         = "q8_0"
+image_type      = "builder"
+llama_cpp_repo  = "fairydreaming/llama.cpp"
+llama_cpp_ref   = "deepseek-dsa"
+description     = "DSv4-Flash Q3_K_M (126 GB) on 2×H100 (160 GB). Good balance of quality and fit."
+
+[[recipes]]
+name            = "dsv4-flash-q4k-2xh200"
+label           = "DSv4-Flash 284B  Q4_K_M  256K ctx  (2×H200)"
+gpu             = "h200-sxm-2x"
+model_repo      = "Preyazz/DeepSeek-V4-Flash-GGUF"
+model_quant     = "Q4_K_M"
+ctx             = 262144
+parallel        = 1
+kv_type         = "q8_0"
+image_type      = "builder"
+llama_cpp_repo  = "fairydreaming/llama.cpp"
+llama_cpp_ref   = "deepseek-dsa"
+description     = "DSv4-Flash Q4_K_M (160 GB) on 2×H200 (282 GB). Great quality, generous context."
+
+[[recipes]]
+name            = "dsv4-flash-q4k-4xh100"
+label           = "DSv4-Flash 284B  Q4_K_M  256K ctx  (4×H100)"
+gpu             = "h100-sxm-4x"
+model_repo      = "Preyazz/DeepSeek-V4-Flash-GGUF"
+model_quant     = "Q4_K_M"
+ctx             = 262144
+parallel        = 2
+kv_type         = "q8_0"
+image_type      = "builder"
+llama_cpp_repo  = "fairydreaming/llama.cpp"
+llama_cpp_ref   = "deepseek-dsa"
+description     = "DSv4-Flash Q4_K_M (160 GB) on 4×H100 (320 GB). 2 parallel slots, room for large ctx."
+
+[[recipes]]
+name            = "dsv4-flash-mxfp4-2xh200"
+label           = "DSv4-Flash 284B  MXFP4  256K ctx  (2×H200)"
+gpu             = "h200-sxm-2x"
+model_repo      = "lovedheart/DeepSeek-V4-Flash-GGUF"
+model_quant     = "MXFP4"
+ctx             = 262144
+parallel        = 1
+kv_type         = "q8_0"
+image_type      = "builder"
+llama_cpp_repo  = "fairydreaming/llama.cpp"
+llama_cpp_ref   = "deepseek-dsa"
+description     = "DSv4-Flash MXFP4 mixed (140 GB) on 2×H200 (282 GB). MoE experts in FP4, rest in FP8."
+
+[[recipes]]
+name            = "dsv4-flash-q4k-2xb200"
+label           = "DSv4-Flash 284B  Q4_K_M  512K ctx  (2×B200)"
+gpu             = "b200-sxm-2x"
+model_repo      = "Preyazz/DeepSeek-V4-Flash-GGUF"
+model_quant     = "Q4_K_M"
+ctx             = 524288
+parallel        = 2
+kv_type         = "q8_0"
+image_type      = "builder"
+llama_cpp_repo  = "fairydreaming/llama.cpp"
+llama_cpp_ref   = "deepseek-dsa"
+description     = "DSv4-Flash Q4_K_M (160 GB) on 2×B200 (384 GB). 2 slots, massive ctx headroom."
+
+[[recipes]]
+name            = "dsv4-flash-q8-4xh100"
+label           = "DSv4-Flash 284B  Q8_0  128K ctx  (4×H100)"
+gpu             = "h100-sxm-4x"
+model_repo      = "Preyazz/DeepSeek-V4-Flash-Q8_0-GGUF"
+model_quant     = "Q8_0"
+ctx             = 131072
+parallel        = 1
+kv_type         = "q8_0"
+image_type      = "builder"
+llama_cpp_repo  = "fairydreaming/llama.cpp"
+llama_cpp_ref   = "deepseek-dsa"
+description     = "DSv4-Flash Q8_0 (282 GB) on 4×H100 (320 GB). Near-lossless quality."
 
 # ── consumer recipes — RTX 5090 32GB ─────────────────────────────────────────
 

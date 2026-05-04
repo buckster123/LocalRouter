@@ -268,6 +268,24 @@ def _create_recipe_wizard(data: dict) -> dict | None:
                 "Image type:", choices=["prebuilt", "builder"], style=MENU_STYLE
             ).ask()
 
+        # Custom llama.cpp (for models needing unmerged PRs)
+        custom_llama = questionary.confirm(
+            "Custom llama.cpp fork/branch? (for unmerged model support, e.g. DSv4)",
+            default=False, style=MENU_STYLE
+        ).ask()
+        if custom_llama:
+            recipe["image_type"] = "builder"  # must compile from source
+            recipe["llama_cpp_repo"] = questionary.text(
+                "GitHub repo (user/repo):",
+                default="fairydreaming/llama.cpp",
+                style=MENU_STYLE,
+            ).ask() or "fairydreaming/llama.cpp"
+            recipe["llama_cpp_ref"] = questionary.text(
+                "Branch/tag/commit:",
+                default="deepseek-dsa",
+                style=MENU_STYLE,
+            ).ask() or "deepseek-dsa"
+
     # Description (optional for all)
     desc = questionary.text("Description (optional):", style=MENU_STYLE).ask()
     if desc:
