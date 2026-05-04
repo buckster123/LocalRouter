@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "localrouter"
-version = "0.2.0"
+version = "0.3.0"
 description = "GGUF endpoint manager — local, Vast.ai & managed inference"
 readme = "README.md"
 license = {text = "MIT"}
