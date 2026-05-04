@@ -76,6 +76,7 @@ def menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg=None):
         "Compute type:",
         choices=[
             "Vast GGUF   — rent a GPU, run your own llama.cpp instance",
+            "vLLM        — tensor-parallel on multi-GPU cluster (DSv4 Pro, etc.)",
             "Local       — run llama-server on your own hardware",
             "Together AI — managed inference, pay per token",
             "← Back",
@@ -89,6 +90,8 @@ def menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg=None):
     if provider_label.startswith("Local"):
         menu_local_launch(recipes)
         return
+
+    is_vllm = provider_label.startswith("vLLM")
 
     if provider_label.startswith("Together"):
         # Managed endpoint flow
@@ -145,7 +148,12 @@ def menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg=None):
     # ── BUG FIX C1: build gpu_choices from gpu_tiers ─────────────────────────
     # Previously gpu_choices was used without being defined, causing a crash
     # when launching a Vast instance.
-    gpu_choices = {tier.get('label', key): key for key, tier in gpu_tiers.items()}
+    # Filter tiers by provider: vLLM tiers have image_type=vllm, GGUF tiers don't
+    if is_vllm:
+        filtered_tiers = {k: t for k, t in gpu_tiers.items() if t.get("image_type") == "vllm"}
+    else:
+        filtered_tiers = {k: t for k, t in gpu_tiers.items() if t.get("image_type") != "vllm"}
+    gpu_choices = {tier.get('label', key): key for key, tier in filtered_tiers.items()}
 
     # 1. GPU tier
     if not gpu_choices:
@@ -160,6 +168,11 @@ def menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg=None):
 
     # 2. Recipe
     gpu_recipes = [r for r in recipes if r.get("gpu") == gpu_key]
+    # Filter by provider type: vLLM shows only vllm recipes, GGUF excludes them
+    if is_vllm:
+        gpu_recipes = [r for r in gpu_recipes if r.get("provider") == "vllm"]
+    else:
+        gpu_recipes = [r for r in gpu_recipes if r.get("provider") != "vllm"]
     if not gpu_recipes:
         console.print(f"[yellow]No recipes for GPU={gpu_key} in recipes.toml[/yellow]")
         press_enter(); return
@@ -188,12 +201,17 @@ def menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg=None):
         idx = recipe_labels.index(recipe_label)
         chosen_recipe = gpu_recipes[idx]
 
-    # 3. Mode
-    mode_label = questionary.select(
-        "Inference mode:", choices=ask_back(list(MODES.keys())), style=MENU_STYLE,
-    ).ask()
-    if mode_label is None or mode_label == "← Back": return
-    mode_key = MODES[mode_label]
+    # 3. Mode (llama.cpp only — vLLM handles this via recipe fields)
+    mode_key = "thinking"
+    kv_key = "q8_0"
+    mmproj_val = ""
+
+    if not is_vllm:
+        mode_label = questionary.select(
+            "Inference mode:", choices=ask_back(list(MODES.keys())), style=MENU_STYLE,
+        ).ask()
+        if mode_label is None or mode_label == "← Back": return
+        mode_key = MODES[mode_label]
 
     # 4. GEO
     geo_label = questionary.select(
@@ -202,32 +220,34 @@ def menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg=None):
     if geo_label is None or geo_label == "← Back": return
     geo_key = GEOS[geo_label]
 
-    # 5. KV type (default from recipe, override offered)
-    default_kv    = chosen_recipe.get("kv_type", "q8_0")
-    default_kv_lbl = next((k for k, v in KV_TYPES.items() if v == default_kv),
-                           list(KV_TYPES.keys())[0])
-    kv_label = questionary.select(
-        f"KV cache type (recipe default: {default_kv}):",
-        choices=ask_back(list(KV_TYPES.keys())),
-        style=MENU_STYLE,
-        default=default_kv_lbl,
-    ).ask()
-    if kv_label is None or kv_label == "← Back": return
-    kv_key = KV_TYPES[kv_label]
-
-    # 6. Vision — auto-enable if recipe declares mmproj, else prompt
-    recipe_mmproj = chosen_recipe.get("mmproj", "")
-    if recipe_mmproj:
-        mmproj_val = recipe_mmproj
-        console.print(f"[dim]Vision: mmproj={mmproj_val} (from recipe)[/dim]")
-    else:
-        mmproj = questionary.select(
-            "Vision support (mmproj, adds ~2 GB VRAM):",
-            choices=["No (text-only, recommended)", "Yes — enable mmproj F16", "← Back"],
+    # 5. KV type (llama.cpp only)
+    if not is_vllm:
+        default_kv    = chosen_recipe.get("kv_type", "q8_0")
+        default_kv_lbl = next((k for k, v in KV_TYPES.items() if v == default_kv),
+                               list(KV_TYPES.keys())[0])
+        kv_label = questionary.select(
+            f"KV cache type (recipe default: {default_kv}):",
+            choices=ask_back(list(KV_TYPES.keys())),
             style=MENU_STYLE,
+            default=default_kv_lbl,
         ).ask()
-        if mmproj is None or mmproj == "← Back": return
-        mmproj_val = "F16" if mmproj.startswith("Yes") else ""
+        if kv_label is None or kv_label == "← Back": return
+        kv_key = KV_TYPES[kv_label]
+
+    # 6. Vision (llama.cpp only)
+    if not is_vllm:
+        recipe_mmproj = chosen_recipe.get("mmproj", "")
+        if recipe_mmproj:
+            mmproj_val = recipe_mmproj
+            console.print(f"[dim]Vision: mmproj={mmproj_val} (from recipe)[/dim]")
+        else:
+            mmproj = questionary.select(
+                "Vision support (mmproj, adds ~2 GB VRAM):",
+                choices=["No (text-only, recommended)", "Yes — enable mmproj F16", "← Back"],
+                style=MENU_STYLE,
+            ).ask()
+            if mmproj is None or mmproj == "← Back": return
+            mmproj_val = "F16" if mmproj.startswith("Yes") else ""
 
     # 7. Max price
     tier_cfg      = gpu_tiers.get(gpu_key, {})
