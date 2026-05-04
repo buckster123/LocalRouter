@@ -294,6 +294,14 @@ def menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg=None):
         repo = chosen_recipe.get("llama_cpp_repo", "ggml-org/llama.cpp")
         ref = chosen_recipe.get("llama_cpp_ref", "master")
         t.add_row("llama.cpp", f"[yellow]{repo} @ {ref}[/yellow]")
+    if chosen_recipe.get("provider") == "vllm":
+        t.add_row("Serving",   "[bold cyan]vLLM[/bold cyan] (tensor parallel)")
+        if chosen_recipe.get("model_id"):
+            t.add_row("Model ID",  chosen_recipe["model_id"])
+        if chosen_recipe.get("kv_cache_dtype"):
+            t.add_row("KV dtype",  chosen_recipe["kv_cache_dtype"])
+        if chosen_recipe.get("reasoning_parser"):
+            t.add_row("Reasoning", chosen_recipe["reasoning_parser"])
     t.add_row("HOST",       "[green]127.0.0.1[/green]  (tunnel-only)")
 
     # Add cost comparison if provider_cfg is available
@@ -341,6 +349,18 @@ def menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg=None):
         env["LLAMA_CPP_REPO"] = chosen_recipe["llama_cpp_repo"]
     if chosen_recipe.get("llama_cpp_ref"):
         env["LLAMA_CPP_REF"] = chosen_recipe["llama_cpp_ref"]
+
+    # vLLM-specific env vars (for provider=vllm recipes)
+    if chosen_recipe.get("model_id"):
+        env["MODEL_ID"] = chosen_recipe["model_id"]
+    if chosen_recipe.get("quantization"):
+        env["QUANTIZATION"] = chosen_recipe["quantization"]
+    if chosen_recipe.get("kv_cache_dtype"):
+        env["KV_CACHE_DTYPE"] = chosen_recipe["kv_cache_dtype"]
+    if chosen_recipe.get("enforce_eager"):
+        env["ENFORCE_EAGER"] = chosen_recipe["enforce_eager"]
+    if chosen_recipe.get("reasoning_parser"):
+        env["REASONING_PARSER"] = chosen_recipe["reasoning_parser"]
 
     hr("Launching...")
     r = subprocess.run(["bash", str(ROOT / "vast_up.sh")], cwd=ROOT, env=env)

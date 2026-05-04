@@ -45,6 +45,7 @@ if [ -z "${DOCKER_IMAGE:-}" ]; then
     case "${IMAGE_TYPE}" in
         builder)  DOCKER_IMAGE="ghcr.io/buckster123/vastai-gguf:builder" ;;
         prebuilt) DOCKER_IMAGE="ghcr.io/buckster123/vastai-gguf:prebuilt" ;;
+        vllm)     DOCKER_IMAGE="ghcr.io/buckster123/vastai-gguf:vllm" ;;
         *)        DOCKER_IMAGE="ghcr.io/buckster123/vastai-gguf:prebuilt" ;;
     esac
 fi
@@ -223,7 +224,20 @@ ONSTART_CMD="MODEL_REPO=${MODEL_REPO} MODEL_QUANT=${MODEL_QUANT} CTX=${CTX} KV_T
 [ -n "${HF_TOKEN_VAL}"     ] && ONSTART_CMD="${ONSTART_CMD} HF_TOKEN=${HF_TOKEN_VAL}"
 [ -n "${LLAMA_CPP_REPO:-}" ] && ONSTART_CMD="${ONSTART_CMD} LLAMA_CPP_REPO=${LLAMA_CPP_REPO}"
 [ -n "${LLAMA_CPP_REF:-}"  ] && ONSTART_CMD="${ONSTART_CMD} LLAMA_CPP_REF=${LLAMA_CPP_REF}"
-ONSTART_CMD="${ONSTART_CMD} bash /app/launch.sh > /var/log/launch.log 2>&1 &"
+
+# vLLM uses a different launch script and env vars
+if [ "${IMAGE_TYPE}" = "vllm" ]; then
+    ONSTART_CMD="MODEL_ID=${MODEL_ID:-${MODEL_REPO}} CTX=${CTX} HOST=127.0.0.1"
+    [ -n "${HF_TOKEN_VAL}"        ] && ONSTART_CMD="${ONSTART_CMD} HF_TOKEN=${HF_TOKEN_VAL}"
+    [ -n "${QUANTIZATION:-}"      ] && ONSTART_CMD="${ONSTART_CMD} QUANTIZATION=${QUANTIZATION}"
+    [ -n "${KV_CACHE_DTYPE:-}"    ] && ONSTART_CMD="${ONSTART_CMD} KV_CACHE_DTYPE=${KV_CACHE_DTYPE}"
+    [ -n "${ENFORCE_EAGER:-}"     ] && ONSTART_CMD="${ONSTART_CMD} ENFORCE_EAGER=${ENFORCE_EAGER}"
+    [ -n "${REASONING_PARSER:-}"  ] && ONSTART_CMD="${ONSTART_CMD} REASONING_PARSER=${REASONING_PARSER}"
+    [ -n "${EXTRA_ARGS:-}"        ] && ONSTART_CMD="${ONSTART_CMD} EXTRA_ARGS='${EXTRA_ARGS}'"
+    ONSTART_CMD="${ONSTART_CMD} bash /app/launch_vllm.sh > /var/log/launch.log 2>&1 &"
+else
+    ONSTART_CMD="${ONSTART_CMD} bash /app/launch.sh > /var/log/launch.log 2>&1 &"
+fi
 
 echo "==> creating instance..."
 echo "    image: ${DOCKER_IMAGE}  (${IMAGE_TYPE})"

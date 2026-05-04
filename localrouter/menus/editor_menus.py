@@ -81,7 +81,8 @@ def _pick_provider() -> str | None:
     choice = questionary.select(
         "Provider type:",
         choices=[
-            "vast_gguf  — GGUF on rented Vast.ai GPU",
+            "vast_gguf  — GGUF on rented Vast.ai GPU (llama.cpp)",
+            "vllm       — vLLM tensor-parallel on multi-GPU cluster",
             "local      — llama.cpp on your own hardware",
             "together   — Together AI managed endpoint",
             "← Back",
@@ -231,6 +232,36 @@ def _create_recipe_wizard(data: dict) -> dict | None:
         recipe["price_output"] = float(
             questionary.text("Price per 1M tokens (output):", default=price, style=MENU_STYLE).ask() or price
         )
+
+    elif provider == "vllm":
+        recipe["provider"] = "vllm"
+        recipe["name"] = questionary.text("Recipe name (slug):", style=MENU_STYLE).ask() or ""
+        recipe["label"] = questionary.text("Display label:", style=MENU_STYLE).ask() or ""
+
+        gpu = _pick_gpu_tier(gpu_tiers)
+        if not gpu:
+            return None
+        recipe["gpu"] = gpu
+
+        recipe["model_id"] = questionary.text(
+            "HF model ID (e.g. deepseek-ai/DeepSeek-V4-Pro):", style=MENU_STYLE
+        ).ask() or ""
+        recipe["ctx"] = int(questionary.text("Context length:", default="393216", style=MENU_STYLE).ask() or "393216")
+        recipe["image_type"] = "vllm"
+
+        kv_dtype = questionary.select(
+            "KV cache dtype:", choices=["auto", "fp8", "fp8_e5m2", "fp8_e4m3"], style=MENU_STYLE
+        ).ask()
+        if kv_dtype and kv_dtype != "auto":
+            recipe["kv_cache_dtype"] = kv_dtype
+
+        enforce = questionary.confirm("Enforce eager (disable CUDA graphs, saves VRAM)?", default=False, style=MENU_STYLE).ask()
+        if enforce:
+            recipe["enforce_eager"] = "true"
+
+        reasoning = questionary.confirm("Enable reasoning parser (deepseek_r1)?", default=True, style=MENU_STYLE).ask()
+        if reasoning:
+            recipe["reasoning_parser"] = "deepseek_r1"
 
     else:  # vast_gguf
         recipe["name"] = questionary.text("Recipe name (slug):", style=MENU_STYLE).ask() or ""

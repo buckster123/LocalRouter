@@ -166,6 +166,7 @@ def list_docker_images(data: dict) -> dict[str, str]:
 REQUIRED_RECIPE_FIELDS_VAST = {"name", "label", "gpu", "model_repo", "model_quant", "ctx"}
 REQUIRED_RECIPE_FIELDS_LOCAL = {"name", "label", "model_path", "port"}
 REQUIRED_RECIPE_FIELDS_TOGETHER = {"name", "label", "model_id"}
+REQUIRED_RECIPE_FIELDS_VLLM = {"name", "label", "gpu", "model_id", "ctx"}
 REQUIRED_TIER_FIELDS = {"vast_names", "label", "max_price"}
 # Optional recipe fields that the editor wizard should know about
 OPTIONAL_RECIPE_FIELDS_VAST = {
@@ -183,6 +184,8 @@ def validate_recipe(recipe: dict, gpu_tiers: dict) -> list[str]:
         missing = REQUIRED_RECIPE_FIELDS_LOCAL - set(recipe.keys())
     elif provider == "together":
         missing = REQUIRED_RECIPE_FIELDS_TOGETHER - set(recipe.keys())
+    elif provider == "vllm":
+        missing = REQUIRED_RECIPE_FIELDS_VLLM - set(recipe.keys())
     else:
         missing = REQUIRED_RECIPE_FIELDS_VAST - set(recipe.keys())
 

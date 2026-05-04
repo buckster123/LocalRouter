@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1
+# vLLM serving image for large MoE models on multi-GPU rigs.
+#
+# Based on the official vllm/vllm-openai image, adds our launch_vllm.sh
+# entrypoint for Vast.ai integration. The official image already includes
+# vLLM, PyTorch, CUDA, FlashInfer, and all dependencies.
+#
+# Build:
+#   docker build -f Dockerfile.vllm -t ghcr.io/buckster123/vastai-gguf:vllm .
+#
+# The launch_vllm.sh script handles:
+#   - Auto-detecting GPU count for tensor parallel
+#   - Model download from HuggingFace
+#   - Proper vllm serve flags for MoE (chunked prefill, FlashInfer, etc.)
+#   - OpenAI-compatible API on port 8000
+
+ARG VLLM_VERSION=v0.20.1
+FROM vllm/vllm-openai:${VLLM_VERSION}
+
+# tini for proper PID 1 signal handling on Vast.ai
+RUN apt-get update && apt-get install -y --no-install-recommends tini \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY launch_vllm.sh /app/launch_vllm.sh
+RUN chmod +x /app/launch_vllm.sh
+
+ENV PORT=8000 \
+    HOST=0.0.0.0
+EXPOSE 8000
+
+ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/app/launch_vllm.sh"]

@@ -37,6 +37,8 @@ prebuilt = "ghcr.io/buckster123/vastai-gguf:prebuilt"
 builder  = "ghcr.io/buckster123/vastai-gguf:builder"
 # legacy alias kept for backward compat while new images are being built
 prebuilt_legacy = "ghcr.io/buckster123/qwen36-llamacpp:latest"
+# vLLM: for large MoE models needing tensor parallelism (DSv4-Pro, etc.)
+vllm = "ghcr.io/buckster123/vastai-gguf:vllm"
 
 # ── consumer / workstation GPU tiers ─────────────────────────────────────────
 
@@ -170,6 +172,44 @@ image_type  = "builder"
 vram_gb     = 192
 num_gpus    = 4
 
+# ── large cluster tiers (for vLLM serving of 1T+ models) ─────────────────────
+
+[gpu_tiers.h200-sxm-4x]
+vast_names  = ["H200_SXM", "H200"]
+label       = "4× H200 SXM 564GB  (~$14/hr)"
+max_price   = "22.00"
+min_disk_gb = 600
+image_type  = "vllm"
+vram_gb     = 141
+num_gpus    = 4
+
+[gpu_tiers.h200-sxm-5x]
+vast_names  = ["H200_SXM", "H200"]
+label       = "5× H200 SXM 705GB  (~$17.50/hr)"
+max_price   = "28.00"
+min_disk_gb = 800
+image_type  = "vllm"
+vram_gb     = 141
+num_gpus    = 5
+
+[gpu_tiers.h100-sxm-8x]
+vast_names  = ["H100_SXM", "H100_SXM5", "H100X"]
+label       = "8× H100 SXM 640GB  (~$20/hr)"
+max_price   = "28.00"
+min_disk_gb = 600
+image_type  = "vllm"
+vram_gb     = 80
+num_gpus    = 8
+
+[gpu_tiers.a100-sxm-8x]
+vast_names  = ["A100_SXM4_80GB", "A100_SXM", "A100X"]
+label       = "8× A100 SXM 640GB  (~$9.60/hr)"
+max_price   = "16.00"
+min_disk_gb = 600
+image_type  = "vllm"
+vram_gb     = 80
+num_gpus    = 8
+
 # ── DeepSeek V4 Flash recipes (284B / 13B active, MoE, 1M ctx) ──────────────
 # Requires llama.cpp with DSv4 support — built from fairydreaming's DSA branch.
 # NOTE: llama_cpp_repo/ref tell launch.sh to clone+compile from this fork.
@@ -272,6 +312,109 @@ image_type      = "builder"
 llama_cpp_repo  = "fairydreaming/llama.cpp"
 llama_cpp_ref   = "deepseek-dsa"
 description     = "DSv4-Flash Q8_0 (282 GB) on 4×H100 (320 GB). Near-lossless quality."
+
+# ── DeepSeek V4 Pro recipes (1.6T / 49B active, MoE, 1M ctx) ────────────────
+# Served via vLLM with tensor parallelism — llama.cpp can't handle this scale.
+# Uses the official FP4+FP8 mixed precision weights (805 GB).
+# NOTE: image_type = "vllm" selects the vLLM docker image + launch_vllm.sh.
+#
+# vLLM-specific recipe fields:
+#   model_id         HF model ID (not model_repo — vLLM loads directly)
+#   image_type       must be "vllm"
+#   quantization     vLLM quantization method (optional)
+#   kv_cache_dtype   fp8 | fp8_e5m2 | auto (optional)
+#   enforce_eager    disable CUDA graphs to save memory (optional)
+#   reasoning_parser deepseek_r1 for thinking models (optional)
+
+[[recipes]]
+name            = "dsv4-pro-5xh200"
+provider        = "vllm"
+label           = "DSv4-Pro 1.6T  FP4+FP8  384K ctx  (5×H200) 🏆"
+gpu             = "h200-sxm-5x"
+model_id        = "deepseek-ai/DeepSeek-V4-Pro"
+ctx             = 393216
+image_type      = "vllm"
+kv_cache_dtype  = "fp8"
+enforce_eager   = "false"
+reasoning_parser = "deepseek_r1"
+description     = "DSv4-Pro FP4+FP8 (805 GB) on 5×H200 (705 GB). Sweet spot: ~40 t/s, $17.50/hr."
+
+[[recipes]]
+name            = "dsv4-pro-4xb200"
+provider        = "vllm"
+label           = "DSv4-Pro 1.6T  FP4+FP8  384K ctx  (4×B200) 🦾"
+gpu             = "b200-sxm-4x"
+model_id        = "deepseek-ai/DeepSeek-V4-Pro"
+ctx             = 393216
+image_type      = "vllm"
+kv_cache_dtype  = "fp8"
+reasoning_parser = "deepseek_r1"
+description     = "DSv4-Pro FP4+FP8 (805 GB) on 4×B200 (768 GB). Baller: ~59 t/s, $22/hr."
+
+[[recipes]]
+name            = "dsv4-pro-8xh100"
+provider        = "vllm"
+label           = "DSv4-Pro 1.6T  FP4+FP8  256K ctx  (8×H100)"
+gpu             = "h100-sxm-8x"
+model_id        = "deepseek-ai/DeepSeek-V4-Pro"
+ctx             = 262144
+image_type      = "vllm"
+kv_cache_dtype  = "fp8"
+enforce_eager   = "true"
+reasoning_parser = "deepseek_r1"
+description     = "DSv4-Pro FP4+FP8 (805 GB) on 8×H100 (640 GB). Tight fit, enforce-eager saves VRAM. ~50 t/s."
+
+[[recipes]]
+name            = "dsv4-pro-4xh200"
+provider        = "vllm"
+label           = "DSv4-Pro 1.6T  FP4+FP8  256K ctx  (4×H200) 💰"
+gpu             = "h200-sxm-4x"
+model_id        = "deepseek-ai/DeepSeek-V4-Pro"
+ctx             = 262144
+image_type      = "vllm"
+kv_cache_dtype  = "fp8"
+enforce_eager   = "true"
+reasoning_parser = "deepseek_r1"
+description     = "DSv4-Pro FP4+FP8 (805 GB) on 4×H200 (564 GB). Budget: enforce-eager + shorter ctx. ~35 t/s, $14/hr."
+
+[[recipes]]
+name            = "dsv4-pro-8xa100"
+provider        = "vllm"
+label           = "DSv4-Pro 1.6T  FP4+FP8  128K ctx  (8×A100) 💰"
+gpu             = "a100-sxm-8x"
+model_id        = "deepseek-ai/DeepSeek-V4-Pro"
+ctx             = 131072
+image_type      = "vllm"
+kv_cache_dtype  = "fp8"
+enforce_eager   = "true"
+reasoning_parser = "deepseek_r1"
+description     = "DSv4-Pro FP4+FP8 (805 GB) on 8×A100 (640 GB). Budget option: ~27 t/s, $9.60/hr. Shorter ctx."
+
+# ── DeepSeek V4 Flash on vLLM (for users who prefer vLLM over llama.cpp) ─────
+
+[[recipes]]
+name            = "dsv4-flash-vllm-4xh100"
+provider        = "vllm"
+label           = "DSv4-Flash 284B  FP4+FP8  384K ctx  (4×H100, vLLM)"
+gpu             = "h100-sxm-4x"
+model_id        = "deepseek-ai/DeepSeek-V4-Flash"
+ctx             = 393216
+image_type      = "vllm"
+kv_cache_dtype  = "fp8"
+reasoning_parser = "deepseek_r1"
+description     = "DSv4-Flash via vLLM on 4×H100 (320 GB). Official FP4+FP8 weights, no GGUF needed."
+
+[[recipes]]
+name            = "dsv4-flash-vllm-2xh200"
+provider        = "vllm"
+label           = "DSv4-Flash 284B  FP4+FP8  512K ctx  (2×H200, vLLM)"
+gpu             = "h200-sxm-2x"
+model_id        = "deepseek-ai/DeepSeek-V4-Flash"
+ctx             = 524288
+image_type      = "vllm"
+kv_cache_dtype  = "fp8"
+reasoning_parser = "deepseek_r1"
+description     = "DSv4-Flash via vLLM on 2×H200 (282 GB). Generous ctx, native precision."
 
 # ── consumer recipes — RTX 5090 32GB ─────────────────────────────────────────
 
