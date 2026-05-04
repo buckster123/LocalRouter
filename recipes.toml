@@ -121,6 +121,53 @@ min_disk_gb = 200
 image_type  = "builder"
 vram_gb     = 192
 
+# ── multi-GPU cluster tiers ──────────────────────────────────────────────────
+
+[gpu_tiers.h100-sxm-2x]
+vast_names  = ["H100_SXM", "H100_SXM5", "H100X"]
+label       = "2× H100 SXM 160GB  (~$5/hr)"
+max_price   = "7.00"
+min_disk_gb = 200
+image_type  = "builder"
+vram_gb     = 80
+num_gpus    = 2
+
+[gpu_tiers.h100-sxm-4x]
+vast_names  = ["H100_SXM", "H100_SXM5", "H100X"]
+label       = "4× H100 SXM 320GB  (~$10/hr)"
+max_price   = "14.00"
+min_disk_gb = 400
+image_type  = "builder"
+vram_gb     = 80
+num_gpus    = 4
+
+[gpu_tiers.h200-sxm-2x]
+vast_names  = ["H200_SXM", "H200"]
+label       = "2× H200 SXM 282GB  (~$7/hr)"
+max_price   = "11.00"
+min_disk_gb = 300
+image_type  = "builder"
+vram_gb     = 141
+num_gpus    = 2
+
+[gpu_tiers.b200-sxm-2x]
+vast_names  = ["B200_SXM", "B200"]
+label       = "2× B200 SXM 384GB  (~$10+/hr)"
+max_price   = "18.00"
+min_disk_gb = 400
+image_type  = "builder"
+vram_gb     = 192
+num_gpus    = 2
+
+[gpu_tiers.b200-sxm-4x]
+vast_names  = ["B200_SXM", "B200"]
+label       = "4× B200 SXM 768GB  (~$20+/hr)"
+max_price   = "36.00"
+min_disk_gb = 800
+image_type  = "builder"
+vram_gb     = 192
+num_gpus    = 4
+
 # ── consumer recipes — RTX 5090 32GB ─────────────────────────────────────────
 
 [[recipes]]

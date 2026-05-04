@@ -11,6 +11,7 @@ from .vast_menus import menu_launch, menu_tunnel, menu_destroy, menu_instances, 
 from .local_menus import menu_local_dispatch
 from .provider_menus import menu_providers, menu_together_models
 from ..hf_browser import menu_hf_browser
+from .editor_menus import menu_editor
 
 
 def banner(docker_img: str) -> None:
@@ -45,6 +46,7 @@ def main() -> None:
                 "Diagnose   — usage stats, rate limits, deep diagnostics",
                 "Instances  — list / reattach to all active instances",
                 "HF Browse  — browse model files on HuggingFace, pin a quant",
+                "Editor     — recipes, GPU tiers, docker images",
                 "Tunnel     — manage SSH tunnel",
                 "Smoke      — run smoke test against endpoint",
                 "Proxy      — unified local endpoint (localhost:8888)",
@@ -65,6 +67,10 @@ def main() -> None:
         elif choice.startswith("Diagnose"):   menu_diagnose(provider_cfg)
         elif choice.startswith("Instances"):  menu_instances()
         elif choice.startswith("HF Browse"):  menu_hf_browser(recipes)
+        elif choice.startswith("Editor"):
+            menu_editor()
+            # Reload config in case editor changed recipes.toml
+            cfg, recipes, gpu_tiers, docker_cfg = load_config()
         elif choice.startswith("Tunnel"):     menu_tunnel()
         elif choice.startswith("Smoke"):      menu_smoke(provider_cfg)
         elif choice.startswith("Proxy"):      menu_proxy()

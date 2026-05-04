@@ -24,3 +24,4 @@ recipes.local.toml
 
 # hermes agent artifacts
 .hermes/
+localrouter.egg-info/
