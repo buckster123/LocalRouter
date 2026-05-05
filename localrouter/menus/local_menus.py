@@ -134,7 +134,7 @@ def menu_local_status(provider_cfg=None):
         return
 
     running = chosen.get("running", False)
-    action_choices = ["View logs"] + (["Stop instance"] if running else []) + ["← Back"]
+    action_choices = ["View logs"] + (["Stop instance"] if running else [])
 
     action = questionary.select(
         f"Action for '{sel}':",

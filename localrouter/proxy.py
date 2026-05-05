@@ -18,7 +18,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich import box
 
-from .config import console, ROOT, PROXY_PORT, LOCAL_TUNNEL_PORT
+from .config import console, ROOT, PROXY_PORT, LOCAL_PORT
 from .helpers import hr
 
 # Endpoint proxy resolver (optional — graceful fallback)
@@ -26,7 +26,7 @@ try:
     from endpoint_proxy import resolve_target
 except ImportError:
     def resolve_target():
-        return f"http://127.0.0.1:{LOCAL_TUNNEL_PORT}/v1", None, "vast-gguf"
+        return f"http://127.0.0.1:{LOCAL_PORT}/v1", None, "vast-gguf"
 
 # Provider config loader (optional — graceful fallback)
 try:
@@ -58,12 +58,14 @@ def _proxy_up():
     console.print(f"\n[dim]Starting proxy → {provider} ({base_url})[/dim]\n")
 
     # Start as background process
+    log_fh = open("/tmp/vastai-gguf-proxy.log", "w")
     proc = subprocess.Popen(
         [sys.executable, str(ROOT / "endpoint_proxy.py")],
-        stdout=open("/tmp/vastai-gguf-proxy.log", "w"),
+        stdout=log_fh,
         stderr=subprocess.STDOUT,
         cwd=str(ROOT),
     )
+    log_fh.close()  # Popen inherits the fd; we can close our handle
 
     pid_file.write_text(str(proc.pid))
     console.print(f"[green]✓ Proxy started (PID {proc.pid})[/green]")
@@ -129,7 +131,7 @@ def proxy_status_detail():
     try:
         result = subprocess.run(
             ["curl", "-s", "--max-time", "3",
-             f"http://127.0.0.1:{LOCAL_TUNNEL_PORT}/v1/models"],
+             f"http://127.0.0.1:{LOCAL_PORT}/v1/models"],
             capture_output=True, text=True, timeout=5
         )
         vast_ok = result.returncode == 0
@@ -144,7 +146,7 @@ def proxy_status_detail():
             try:
                 result = subprocess.run(
                     ["curl", "-s", "--max-time", "5",
-                     "-H", "Authorization: Bearer " + api_key,
+                     "-H", f"Authorization: Bearer {api_key}",
                      "https://api.together.ai/v1/models"],
                     capture_output=True, text=True, timeout=8
                 )
@@ -160,7 +162,7 @@ def proxy_status_detail():
     vast_status = "[green]available[/green]" if vast_ok else "[red]unreachable[/red]"
     togeth_status = "[green]available[/green]" if togeth_ok else "[yellow]not configured[/yellow]"
 
-    t.add_row("Vast GGUF", vast_status, f"http://127.0.0.1:{LOCAL_TUNNEL_PORT}/v1")
+    t.add_row("Vast GGUF", vast_status, f"http://127.0.0.1:{LOCAL_PORT}/v1")
     t.add_row("Together AI", togeth_status, "https://api.together.ai/v1")
 
     console.print(Panel(t, border_style="#3d3d5c"))

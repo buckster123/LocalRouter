@@ -91,7 +91,7 @@ else
 fi
 
 hr "models"
-eval curl -fsS "${AUTH_HEADER}" "${URL}/models" | jq '.data // . | type | if . == "array" then .[0:3] else .data[0:3] end' 2>/dev/null || \
+eval curl -fsS "${AUTH_HEADER}" "${URL}/models" | jq '[.data // .] | flatten | .[0:3]' 2>/dev/null || \
      echo "(models endpoint not available)"
 
 hr "warm-up: short completion"

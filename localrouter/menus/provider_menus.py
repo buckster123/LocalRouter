@@ -226,7 +226,7 @@ def menu_together_models(provider_cfg):
     console.print(f"\n[dim]Total: {len(model_list)} models available[/dim]\n")
 
     # Browse by family
-    family_choices = sorted(families.keys()) + ["[all families]", "← Back"]
+    family_choices = sorted(families.keys()) + ["[all families]"]
     sel = questionary.select(
         "Browse family:",
         choices=ask_back(family_choices),

@@ -1,8 +1,8 @@
 """Shared configuration, constants, and recipe loader for localrouter."""
 from __future__ import annotations
 
-import re
 import sys
+import tomllib
 from pathlib import Path
 
 try:
@@ -34,7 +34,6 @@ LOCAL_PID_SUFFIX = ".pid"
 # ── console & style ──────────────────────────────────────────────────────────
 console    = Console()
 LOCAL_PORT       = 8800     # SSH tunnel local port (remote 8000 → local 8800)
-LOCAL_TUNNEL_PORT = 8800    # Same as LOCAL_PORT, used by proxy_status_detail
 PROXY_PORT       = 8888     # Endpoint proxy listen port
 
 MENU_STYLE = Style([
@@ -52,58 +51,9 @@ MENU_STYLE = Style([
 # ── recipe loader ─────────────────────────────────────────────────────────────
 
 def _load_toml(path: Path) -> dict:
-    """Minimal TOML parser — handles the subset used in recipes.toml."""
-    data: dict = {}
-    cur = data
-    cur_key = None
-    arr = None   # current [[array]] list
-
-    for raw_line in path.read_text().splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-
-        # [[array-of-tables]]
-        m = re.match(r'^\[\[(.+?)\]\]$', line)
-        if m:
-            key = m.group(1).strip()
-            if key not in data:
-                data[key] = []
-            arr = {}
-            data[key].append(arr)
-            cur = arr
-            cur_key = None
-            continue
-
-        # [table]
-        m = re.match(r'^\[(.+?)\]$', line)
-        if m:
-            parts = m.group(1).strip().split(".")
-            cur = data
-            for p in parts:
-                cur = cur.setdefault(p, {})
-            arr = None
-            cur_key = None
-            continue
-
-        # key = value
-        m = re.match(r'^(\w+)\s*=\s*(.+)$', line)
-        if m:
-            k, v = m.group(1), m.group(2).strip()
-            if v.startswith('"') and v.endswith('"'):
-                cur[k] = v[1:-1]
-            elif v.startswith('[') and v.endswith(']'):
-                # Simple string array: ["A", "B", "C"]
-                cur[k] = re.findall(r'"([^"]+)"', v)
-            elif v.isdigit():
-                cur[k] = int(v)
-            else:
-                try:
-                    cur[k] = float(v)
-                except ValueError:
-                    cur[k] = v
-
-    return data
+    """Load a TOML file using stdlib tomllib (Python 3.11+)."""
+    with open(path, "rb") as f:
+        return tomllib.load(f)
 
 
 def load_config():

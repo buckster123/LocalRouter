@@ -14,23 +14,9 @@ from pathlib import Path
 
 try:
     import questionary
-    from questionary import Style
-
-    MENU_STYLE = Style([
-        ("qmark",       "fg:#7c6af7 bold"),
-        ("question",    "bold"),
-        ("answer",      "fg:#7c6af7 bold"),
-        ("pointer",     "fg:#7c6af7 bold"),
-        ("highlighted", "fg:#7c6af7 bold"),
-        ("selected",    "fg:#9d8ff7"),
-        ("separator",   "fg:#555555"),
-        ("instruction", "fg:#555555 italic"),
-    ])
 except ImportError:
     questionary = None  # type: ignore[assignment]
-    MENU_STYLE = None
-
-from .config import PROVIDER_DIR, PROVIDER_CFG, ROOT, console, _load_toml
+from .config import PROVIDER_DIR, PROVIDER_CFG, ROOT, console, _load_toml, MENU_STYLE
 from .helpers import last_instance, get_instance_json
 
 # ---------------------------------------------------------------------------

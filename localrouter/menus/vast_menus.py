@@ -22,7 +22,7 @@ from rich import box
 
 from ..config import (
     console, MENU_STYLE, GEOS, MODES, KV_TYPES, ROOT, LOCAL_PORT,
-    LOCAL_TUNNEL_PORT, HF_PIN, LAST_INST, PROVIDER_DIR,
+    HF_PIN, LAST_INST, PROVIDER_DIR,
     load_config, image_for_type, cold_start_estimate,
 )
 from ..helpers import (
@@ -275,7 +275,8 @@ def menu_launch(recipes, gpu_tiers, docker_cfg, provider_cfg=None):
         num_gpus   = chosen_recipe.get("num_gpus", tier_cfg.get("num_gpus", 1))
         min_cuda   = chosen_recipe.get("min_cuda", tier_cfg.get("min_cuda", "12.8"))
         offer_id   = browse_offers(gpu_key, geo_key, max_price,
-                                   tier_cfg=tier_cfg, num_gpus=num_gpus, min_cuda=min_cuda)
+                                   tier_cfg=tier_cfg, num_gpus=num_gpus, min_cuda=min_cuda,
+                                   min_disk=tier_cfg.get("min_disk_gb", 60))
         if offer_id is None: return
 
     # ── summary ──────────────────────────────────────────────────────────────

@@ -113,7 +113,7 @@ def _restart_launch(inst_id):
 
 # ── offer browser ─────────────────────────────────────────────────────────────
 
-def browse_offers(gpu_key, geo_key, max_price, tier_cfg=None, num_gpus=1, min_cuda="12.8"):
+def browse_offers(gpu_key, geo_key, max_price, tier_cfg=None, num_gpus=1, min_cuda="12.8", min_disk=60):
     """Search Vast.ai for GPU offers matching the given criteria.
 
     Args:
@@ -123,6 +123,7 @@ def browse_offers(gpu_key, geo_key, max_price, tier_cfg=None, num_gpus=1, min_cu
         tier_cfg:  Optional tier config dict with 'vast_names' list.
         num_gpus:  Number of GPUs required.
         min_cuda:  Minimum CUDA version string.
+        min_disk:  Minimum disk space in GB (from tier/recipe).
 
     Returns:
         Offer ID string, empty string for auto-cheapest, or None if cancelled.
@@ -150,19 +151,35 @@ def browse_offers(gpu_key, geo_key, max_price, tier_cfg=None, num_gpus=1, min_cu
     else:
         gpu_filter = f"gpu_name=RTX_{gpu_key}"
 
-    raw, _, rc = capture(
+    raw, err, rc = capture(
         f'vastai search offers "{gpu_filter} num_gpus={num_gpus} reliability>0.97 '
-        f'inet_down>300 dph_total<{max_price} disk_space>60 '
-        f'cuda_vers>={min_cuda} rentable=true" --order dph_total --raw 2>/dev/null',
+        f'inet_down>300 dph_total<{max_price} disk_space>{min_disk} '
+        f'cuda_vers>={min_cuda} rentable=true" --order dph_total --raw',
         timeout=20)
 
     if rc != 0 or not raw:
-        console.print("[red]vastai search failed or no results.[/red]"); return None
+        console.print(f"[red]vastai search failed (rc={rc}).[/red]")
+        if err:
+            console.print(f"[dim]{err[:300]}[/dim]")
+        if raw:
+            console.print(f"[dim]{raw[:300]}[/dim]")
+        return None
+
+    # Strip any non-JSON prefix (vastai CLI sometimes prints status lines before JSON)
+    json_start = raw.find('[')
+    if json_start < 0:
+        console.print("[red]No JSON array in vastai output.[/red]")
+        console.print(f"[dim]{raw[:300]}[/dim]")
+        return None
+    if json_start > 0:
+        raw = raw[json_start:]
 
     try:
         offers = json.loads(raw)
-    except Exception:
-        console.print("[red]Could not parse offers JSON.[/red]"); return None
+    except Exception as e:
+        console.print(f"[red]Could not parse offers JSON: {e}[/red]")
+        console.print(f"[dim]{raw[:300]}[/dim]")
+        return None
 
     pattern  = re.compile(rf", ({geo_re})$")
     filtered = [o for o in offers if pattern.search(o.get("geolocation", ""))]

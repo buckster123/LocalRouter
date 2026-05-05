@@ -32,7 +32,7 @@ set -euo pipefail
 
 GPU="${GPU:-5090}"
 MODEL="${MODEL:-dense}"
-KV_TYPE="${KV_TYPE:-q8_0}"
+KV_TYPE="${KV_TYPE:-}"   # set per-preset below, global default after case block
 MODE="${MODE:-thinking}"
 MIN_DISK_GB="${MIN_DISK_GB:-}"  # set per-GPU below if not overridden
 PARALLEL="${PARALLEL:-}"

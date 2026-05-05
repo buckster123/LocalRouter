@@ -1,1089 +1,1048 @@
-# recipes.toml — GPU tier + model recipe catalogue for vastai-gguf-launcher
-#
-# Edit this file to add GPUs or models. The manager reads it at startup.
-# No Python or bash editing needed for new tiers or recipes.
-#
-# GPU tier fields:
-#   vast_names   list of Vast.ai gpu_name strings for this tier (required)
-#   label        display name in the TUI (required)
-#   max_price    $/hr ceiling for offer search (required)
-#   min_disk_gb  minimum container disk GB (default 60)
-#   image_type   "prebuilt" | "builder"  (default "prebuilt")
-#                prebuilt = fat binary image, fast cold start (~2 min pull)
-#                builder  = compiles llama.cpp at runtime for exact SM arch (~8-12 min extra)
-#   min_cuda     minimum cuda_vers for offer filter (default "12.8")
-#   num_gpus     GPUs per instance (default 1)
-#
-# Recipe fields:
-#   name         unique slug (required)
-#   label        display name in TUI (required)
-#   gpu          must match a gpu_tiers key (required)
-#   model_repo   HuggingFace repo (required)
-#   model_quant  quant tag matched as substring against filenames (required)
-#   ctx          total KV pool in tokens (required)
-#   parallel     concurrent decode slots, each gets ctx/parallel tokens (default 1)
-#   kv_type      q8_0 | q4_0 | bf16 (default q8_0)
-#   min_disk_gb  override tier default disk for heavy recipes
-#   image_type   override tier default image type
-#   llama_cpp_repo  custom llama.cpp fork (user/repo) for unmerged model support
-#   llama_cpp_ref   branch/tag/commit of the custom fork (default: master)
-#   description  free text shown in TUI
-
-# ── docker images ─────────────────────────────────────────────────────────────
 [docker]
-# prebuilt: fat binary SM89 (4090) + SM120 (5090/6000Pro), fast cold start
 prebuilt = "ghcr.io/buckster123/vastai-gguf:prebuilt"
-# builder: CUDA dev toolchain only — compiles llama.cpp for exact SM arch at boot
-builder  = "ghcr.io/buckster123/vastai-gguf:builder"
-# legacy alias kept for backward compat while new images are being built
+builder = "ghcr.io/buckster123/vastai-gguf:builder"
 prebuilt_legacy = "ghcr.io/buckster123/qwen36-llamacpp:latest"
-# vLLM: for large MoE models needing tensor parallelism (DSv4-Pro, etc.)
 vllm = "ghcr.io/buckster123/vastai-gguf:vllm"
 
-# ── consumer / workstation GPU tiers ─────────────────────────────────────────
-
 [gpu_tiers.5090]
-vast_names  = ["RTX_5090"]
-label       = "RTX 5090 32GB   (~$0.34/hr)"
-max_price   = "0.55"
+vast_names = [
+    "RTX_5090",
+]
+label = "RTX 5090 32GB   (~$0.34/hr)"
+max_price = "0.55"
 min_disk_gb = 60
-image_type  = "prebuilt"
-vram_gb     = 32
+image_type = "prebuilt"
+vram_gb = 32
 
 [gpu_tiers.4090]
-vast_names  = ["RTX_4090"]
-label       = "RTX 4090 24GB   (~$0.28/hr)"
-max_price   = "0.45"
+vast_names = [
+    "RTX_4090",
+]
+label = "RTX 4090 24GB   (~$0.28/hr)"
+max_price = "0.45"
 min_disk_gb = 60
-image_type  = "prebuilt"
-vram_gb     = 24
+image_type = "prebuilt"
+vram_gb = 24
 
 [gpu_tiers.6000pro]
-vast_names  = ["RTX_PRO_6000_WS", "RTX_PRO_6000_S"]
-label       = "RTX PRO 6000 96GB  (~$0.93/hr)"
-max_price   = "1.60"
+vast_names = [
+    "RTX_PRO_6000_WS",
+    "RTX_PRO_6000_S",
+]
+label = "RTX PRO 6000 96GB  (~$0.93/hr)"
+max_price = "1.60"
 min_disk_gb = 80
-image_type  = "prebuilt"
-vram_gb     = 96
+image_type = "prebuilt"
+vram_gb = 96
 
-# RTX 5090 in a datacenter (rare but exists — same card, better host hw)
 [gpu_tiers.5090-dc]
-vast_names  = ["RTX_5090"]
-label       = "RTX 5090 32GB  DC  (~$0.40/hr)"
-max_price   = "0.60"
+vast_names = [
+    "RTX_5090",
+]
+label = "RTX 5090 32GB  DC  (~$0.40/hr)"
+max_price = "0.60"
 min_disk_gb = 60
-image_type  = "prebuilt"
-vram_gb     = 32
-
-# ── datacenter GPU tiers ──────────────────────────────────────────────────────
+image_type = "prebuilt"
+vram_gb = 32
 
 [gpu_tiers.h100-sxm]
-vast_names  = ["H100_SXM", "H100_SXM5", "H100X"]
-label       = "H100 SXM 80GB   (~$2.50/hr)"
-max_price   = "3.50"
+vast_names = [
+    "H100_SXM",
+    "H100_SXM5",
+    "H100X",
+]
+label = "H100 SXM 80GB   (~$2.50/hr)"
+max_price = "3.50"
 min_disk_gb = 100
-image_type  = "builder"
-vram_gb     = 80
+image_type = "builder"
+vram_gb = 80
 
 [gpu_tiers.h100-pcie]
-vast_names  = ["H100_PCIE"]
-label       = "H100 PCIe 80GB  (~$1.80/hr)"
-max_price   = "2.80"
+vast_names = [
+    "H100_PCIE",
+]
+label = "H100 PCIe 80GB  (~$1.80/hr)"
+max_price = "2.80"
 min_disk_gb = 100
-image_type  = "builder"
-vram_gb     = 80
+image_type = "builder"
+vram_gb = 80
 
 [gpu_tiers.a100-sxm]
-vast_names  = ["A100_SXM4_80GB", "A100_SXM", "A100X"]
-label       = "A100 SXM 80GB   (~$1.20/hr)"
-max_price   = "2.00"
+vast_names = [
+    "A100_SXM4_80GB",
+    "A100_SXM",
+    "A100X",
+]
+label = "A100 SXM 80GB   (~$1.20/hr)"
+max_price = "2.00"
 min_disk_gb = 80
-image_type  = "builder"
-vram_gb     = 80
+image_type = "builder"
+vram_gb = 80
 
 [gpu_tiers.a100-pcie]
-vast_names  = ["A100_PCIE", "A100_PCIE_80GB"]
-label       = "A100 PCIe 80GB  (~$1.00/hr)"
-max_price   = "1.80"
+vast_names = [
+    "A100_PCIE",
+    "A100_PCIE_80GB",
+]
+label = "A100 PCIe 80GB  (~$1.00/hr)"
+max_price = "1.80"
 min_disk_gb = 80
-image_type  = "builder"
-vram_gb     = 80
+image_type = "builder"
+vram_gb = 80
 
 [gpu_tiers.h200-sxm]
-vast_names  = ["H200_SXM", "H200"]
-label       = "H200 SXM 141GB  (~$3.50/hr)"
-max_price   = "5.50"
+vast_names = [
+    "H200_SXM",
+    "H200",
+]
+label = "H200 SXM 141GB  (~$3.50/hr)"
+max_price = "5.50"
 min_disk_gb = 150
-image_type  = "builder"
-vram_gb     = 141
+image_type = "builder"
+vram_gb = 141
 
 [gpu_tiers.b200-sxm]
-vast_names  = ["B200_SXM", "B200"]
-label       = "B200 SXM 192GB  (~$5+/hr)"
-max_price   = "9.00"
+vast_names = [
+    "B200_SXM",
+    "B200",
+]
+label = "B200 SXM 192GB  (~$5+/hr)"
+max_price = "9.00"
 min_disk_gb = 200
-image_type  = "builder"
-vram_gb     = 192
-
-# ── multi-GPU cluster tiers ──────────────────────────────────────────────────
+image_type = "builder"
+vram_gb = 192
 
 [gpu_tiers.h100-sxm-2x]
-vast_names  = ["H100_SXM", "H100_SXM5", "H100X"]
-label       = "2× H100 SXM 160GB  (~$5/hr)"
-max_price   = "7.00"
+vast_names = [
+    "H100_SXM",
+    "H100_SXM5",
+    "H100X",
+]
+label = "2× H100 SXM 160GB  (~$5/hr)"
+max_price = "7.00"
 min_disk_gb = 200
-image_type  = "builder"
-vram_gb     = 80
-num_gpus    = 2
+image_type = "builder"
+vram_gb = 80
+num_gpus = 2
 
 [gpu_tiers.h100-sxm-4x]
-vast_names  = ["H100_SXM", "H100_SXM5", "H100X"]
-label       = "4× H100 SXM 320GB  (~$10/hr)"
-max_price   = "14.00"
+vast_names = [
+    "H100_SXM",
+    "H100_SXM5",
+    "H100X",
+]
+label = "4× H100 SXM 320GB  (~$10/hr)"
+max_price = "14.00"
 min_disk_gb = 400
-image_type  = "builder"
-vram_gb     = 80
-num_gpus    = 4
+image_type = "builder"
+vram_gb = 80
+num_gpus = 4
 
 [gpu_tiers.h200-sxm-2x]
-vast_names  = ["H200_SXM", "H200"]
-label       = "2× H200 SXM 282GB  (~$7/hr)"
-max_price   = "11.00"
+vast_names = [
+    "H200_SXM",
+    "H200",
+]
+label = "2× H200 SXM 282GB  (~$7/hr)"
+max_price = "11.00"
 min_disk_gb = 300
-image_type  = "builder"
-vram_gb     = 141
-num_gpus    = 2
+image_type = "builder"
+vram_gb = 141
+num_gpus = 2
 
 [gpu_tiers.b200-sxm-2x]
-vast_names  = ["B200_SXM", "B200"]
-label       = "2× B200 SXM 384GB  (~$10+/hr)"
-max_price   = "18.00"
+vast_names = [
+    "B200_SXM",
+    "B200",
+]
+label = "2× B200 SXM 384GB  (~$10+/hr)"
+max_price = "18.00"
 min_disk_gb = 400
-image_type  = "builder"
-vram_gb     = 192
-num_gpus    = 2
+image_type = "builder"
+vram_gb = 192
+num_gpus = 2
 
 [gpu_tiers.b200-sxm-4x]
-vast_names  = ["B200_SXM", "B200"]
-label       = "4× B200 SXM 768GB  (~$20+/hr)"
-max_price   = "36.00"
+vast_names = [
+    "B200_SXM",
+    "B200",
+]
+label = "4× B200 SXM 768GB  (~$20+/hr)"
+max_price = "36.00"
 min_disk_gb = 800
-image_type  = "builder"
-vram_gb     = 192
-num_gpus    = 4
-
-# ── large cluster tiers (for vLLM serving of 1T+ models) ─────────────────────
+image_type = "builder"
+vram_gb = 192
+num_gpus = 4
 
 [gpu_tiers.h200-sxm-4x]
-vast_names  = ["H200_SXM", "H200"]
-label       = "4× H200 SXM 564GB  (~$14/hr)"
-max_price   = "22.00"
+vast_names = [
+    "H200_SXM",
+    "H200",
+]
+label = "4× H200 SXM 564GB  (~$14/hr)"
+max_price = "22.00"
 min_disk_gb = 600
-image_type  = "vllm"
-vram_gb     = 141
-num_gpus    = 4
+image_type = "vllm"
+vram_gb = 141
+num_gpus = 4
 
 [gpu_tiers.h200-sxm-5x]
-vast_names  = ["H200_SXM", "H200"]
-label       = "5× H200 SXM 705GB  (~$17.50/hr)"
-max_price   = "28.00"
+vast_names = [
+    "H200_SXM",
+    "H200",
+]
+label = "5× H200 SXM 705GB  (~$17.50/hr)"
+max_price = "28.00"
 min_disk_gb = 800
-image_type  = "vllm"
-vram_gb     = 141
-num_gpus    = 5
+image_type = "vllm"
+vram_gb = 141
+num_gpus = 5
 
 [gpu_tiers.h100-sxm-8x]
-vast_names  = ["H100_SXM", "H100_SXM5", "H100X"]
-label       = "8× H100 SXM 640GB  (~$20/hr)"
-max_price   = "28.00"
+vast_names = [
+    "H100_SXM",
+    "H100_SXM5",
+    "H100X",
+]
+label = "8× H100 SXM 640GB  (~$20/hr)"
+max_price = "28.00"
 min_disk_gb = 600
-image_type  = "vllm"
-vram_gb     = 80
-num_gpus    = 8
+image_type = "vllm"
+vram_gb = 80
+num_gpus = 8
 
 [gpu_tiers.a100-sxm-8x]
-vast_names  = ["A100_SXM4_80GB", "A100_SXM", "A100X"]
-label       = "8× A100 SXM 640GB  (~$9.60/hr)"
-max_price   = "16.00"
+vast_names = [
+    "A100_SXM4_80GB",
+    "A100_SXM",
+    "A100X",
+]
+label = "8× A100 SXM 640GB  (~$9.60/hr)"
+max_price = "16.00"
 min_disk_gb = 600
-image_type  = "vllm"
-vram_gb     = 80
-num_gpus    = 8
-
-# ── DeepSeek V4 Flash recipes (284B / 13B active, MoE, 1M ctx) ──────────────
-# Requires llama.cpp with DSv4 support — built from fairydreaming's DSA branch.
-# NOTE: llama_cpp_repo/ref tell launch.sh to clone+compile from this fork.
-# When DSv4 support merges to llama.cpp master, remove these two fields.
+image_type = "vllm"
+vram_gb = 80
+num_gpus = 8
 
 [[recipes]]
-name            = "dsv4-flash-q2k-2xh100"
-label           = "DSv4-Flash 284B  Q2_K  128K ctx  (2×H100)"
-gpu             = "h100-sxm-2x"
-model_repo      = "Preyazz/DeepSeek-V4-Flash-GGUF"
-model_quant     = "Q2_K"
-ctx             = 131072
-parallel        = 1
-kv_type         = "q8_0"
-image_type      = "builder"
-llama_cpp_repo  = "fairydreaming/llama.cpp"
-llama_cpp_ref   = "deepseek-dsa"
-description     = "DSv4-Flash Q2_K (96 GB) on 2×H100 (160 GB). Lightest quant, fits with KV headroom."
+name = "dsv4-flash-q2k-2xh100"
+label = "DSv4-Flash 284B  Q2_K  128K ctx  (2×H100)"
+gpu = "h100-sxm-2x"
+model_repo = "Preyazz/DeepSeek-V4-Flash-GGUF"
+model_quant = "Q2_K"
+ctx = 131072
+parallel = 1
+kv_type = "q8_0"
+image_type = "builder"
+llama_cpp_repo = "fairydreaming/llama.cpp"
+llama_cpp_ref = "deepseek-dsa"
+description = "DSv4-Flash Q2_K (96 GB) on 2×H100 (160 GB). Lightest quant, fits with KV headroom."
 
 [[recipes]]
-name            = "dsv4-flash-q3k-2xh100"
-label           = "DSv4-Flash 284B  Q3_K_M  128K ctx  (2×H100)"
-gpu             = "h100-sxm-2x"
-model_repo      = "Preyazz/DeepSeek-V4-Flash-GGUF"
-model_quant     = "Q3_K_M"
-ctx             = 131072
-parallel        = 1
-kv_type         = "q8_0"
-image_type      = "builder"
-llama_cpp_repo  = "fairydreaming/llama.cpp"
-llama_cpp_ref   = "deepseek-dsa"
-description     = "DSv4-Flash Q3_K_M (126 GB) on 2×H100 (160 GB). Good balance of quality and fit."
+name = "dsv4-flash-q3k-2xh100"
+label = "DSv4-Flash 284B  Q3_K_M  128K ctx  (2×H100)"
+gpu = "h100-sxm-2x"
+model_repo = "Preyazz/DeepSeek-V4-Flash-GGUF"
+model_quant = "Q3_K_M"
+ctx = 131072
+parallel = 1
+kv_type = "q8_0"
+image_type = "builder"
+llama_cpp_repo = "fairydreaming/llama.cpp"
+llama_cpp_ref = "deepseek-dsa"
+description = "DSv4-Flash Q3_K_M (126 GB) on 2×H100 (160 GB). Good balance of quality and fit."
 
 [[recipes]]
-name            = "dsv4-flash-q4k-2xh200"
-label           = "DSv4-Flash 284B  Q4_K_M  256K ctx  (2×H200)"
-gpu             = "h200-sxm-2x"
-model_repo      = "Preyazz/DeepSeek-V4-Flash-GGUF"
-model_quant     = "Q4_K_M"
-ctx             = 262144
-parallel        = 1
-kv_type         = "q8_0"
-image_type      = "builder"
-llama_cpp_repo  = "fairydreaming/llama.cpp"
-llama_cpp_ref   = "deepseek-dsa"
-description     = "DSv4-Flash Q4_K_M (160 GB) on 2×H200 (282 GB). Great quality, generous context."
+name = "dsv4-flash-q4k-2xh200"
+label = "DSv4-Flash 284B  Q4_K_M  256K ctx  (2×H200)"
+gpu = "h200-sxm-2x"
+model_repo = "Preyazz/DeepSeek-V4-Flash-GGUF"
+model_quant = "Q4_K_M"
+ctx = 262144
+parallel = 1
+kv_type = "q8_0"
+image_type = "builder"
+llama_cpp_repo = "fairydreaming/llama.cpp"
+llama_cpp_ref = "deepseek-dsa"
+description = "DSv4-Flash Q4_K_M (160 GB) on 2×H200 (282 GB). Great quality, generous context."
 
 [[recipes]]
-name            = "dsv4-flash-q4k-4xh100"
-label           = "DSv4-Flash 284B  Q4_K_M  256K ctx  (4×H100)"
-gpu             = "h100-sxm-4x"
-model_repo      = "Preyazz/DeepSeek-V4-Flash-GGUF"
-model_quant     = "Q4_K_M"
-ctx             = 262144
-parallel        = 2
-kv_type         = "q8_0"
-image_type      = "builder"
-llama_cpp_repo  = "fairydreaming/llama.cpp"
-llama_cpp_ref   = "deepseek-dsa"
-description     = "DSv4-Flash Q4_K_M (160 GB) on 4×H100 (320 GB). 2 parallel slots, room for large ctx."
+name = "dsv4-flash-q4k-4xh100"
+label = "DSv4-Flash 284B  Q4_K_M  256K ctx  (4×H100)"
+gpu = "h100-sxm-4x"
+model_repo = "Preyazz/DeepSeek-V4-Flash-GGUF"
+model_quant = "Q4_K_M"
+ctx = 262144
+parallel = 2
+kv_type = "q8_0"
+image_type = "builder"
+llama_cpp_repo = "fairydreaming/llama.cpp"
+llama_cpp_ref = "deepseek-dsa"
+description = "DSv4-Flash Q4_K_M (160 GB) on 4×H100 (320 GB). 2 parallel slots, room for large ctx."
 
 [[recipes]]
-name            = "dsv4-flash-mxfp4-2xh200"
-label           = "DSv4-Flash 284B  MXFP4  256K ctx  (2×H200)"
-gpu             = "h200-sxm-2x"
-model_repo      = "lovedheart/DeepSeek-V4-Flash-GGUF"
-model_quant     = "MXFP4"
-ctx             = 262144
-parallel        = 1
-kv_type         = "q8_0"
-image_type      = "builder"
-llama_cpp_repo  = "fairydreaming/llama.cpp"
-llama_cpp_ref   = "deepseek-dsa"
-description     = "DSv4-Flash MXFP4 mixed (140 GB) on 2×H200 (282 GB). MoE experts in FP4, rest in FP8."
+name = "dsv4-flash-mxfp4-2xh200"
+label = "DSv4-Flash 284B  MXFP4  256K ctx  (2×H200)"
+gpu = "h200-sxm-2x"
+model_repo = "lovedheart/DeepSeek-V4-Flash-GGUF"
+model_quant = "MXFP4"
+ctx = 262144
+parallel = 1
+kv_type = "q8_0"
+image_type = "builder"
+llama_cpp_repo = "fairydreaming/llama.cpp"
+llama_cpp_ref = "deepseek-dsa"
+description = "DSv4-Flash MXFP4 mixed (140 GB) on 2×H200 (282 GB). MoE experts in FP4, rest in FP8."
 
 [[recipes]]
-name            = "dsv4-flash-q4k-2xb200"
-label           = "DSv4-Flash 284B  Q4_K_M  512K ctx  (2×B200)"
-gpu             = "b200-sxm-2x"
-model_repo      = "Preyazz/DeepSeek-V4-Flash-GGUF"
-model_quant     = "Q4_K_M"
-ctx             = 524288
-parallel        = 2
-kv_type         = "q8_0"
-image_type      = "builder"
-llama_cpp_repo  = "fairydreaming/llama.cpp"
-llama_cpp_ref   = "deepseek-dsa"
-description     = "DSv4-Flash Q4_K_M (160 GB) on 2×B200 (384 GB). 2 slots, massive ctx headroom."
+name = "dsv4-flash-q4k-2xb200"
+label = "DSv4-Flash 284B  Q4_K_M  512K ctx  (2×B200)"
+gpu = "b200-sxm-2x"
+model_repo = "Preyazz/DeepSeek-V4-Flash-GGUF"
+model_quant = "Q4_K_M"
+ctx = 524288
+parallel = 2
+kv_type = "q8_0"
+image_type = "builder"
+llama_cpp_repo = "fairydreaming/llama.cpp"
+llama_cpp_ref = "deepseek-dsa"
+description = "DSv4-Flash Q4_K_M (160 GB) on 2×B200 (384 GB). 2 slots, massive ctx headroom."
 
 [[recipes]]
-name            = "dsv4-flash-q8-4xh100"
-label           = "DSv4-Flash 284B  Q8_0  128K ctx  (4×H100)"
-gpu             = "h100-sxm-4x"
-model_repo      = "Preyazz/DeepSeek-V4-Flash-Q8_0-GGUF"
-model_quant     = "Q8_0"
-ctx             = 131072
-parallel        = 1
-kv_type         = "q8_0"
-image_type      = "builder"
-llama_cpp_repo  = "fairydreaming/llama.cpp"
-llama_cpp_ref   = "deepseek-dsa"
-description     = "DSv4-Flash Q8_0 (282 GB) on 4×H100 (320 GB). Near-lossless quality."
-
-# ── DeepSeek V4 Pro recipes (1.6T / 49B active, MoE, 1M ctx) ────────────────
-# Served via vLLM with tensor parallelism — llama.cpp can't handle this scale.
-# Uses the official FP4+FP8 mixed precision weights (805 GB).
-# NOTE: image_type = "vllm" selects the vLLM docker image + launch_vllm.sh.
-#
-# vLLM-specific recipe fields:
-#   model_id         HF model ID (not model_repo — vLLM loads directly)
-#   image_type       must be "vllm"
-#   quantization     vLLM quantization method (optional)
-#   kv_cache_dtype   fp8 | fp8_e5m2 | auto (optional)
-#   enforce_eager    disable CUDA graphs to save memory (optional)
-#   reasoning_parser deepseek_r1 for thinking models (optional)
+name = "dsv4-flash-q8-4xh100"
+label = "DSv4-Flash 284B  Q8_0  128K ctx  (4×H100)"
+gpu = "h100-sxm-4x"
+model_repo = "Preyazz/DeepSeek-V4-Flash-Q8_0-GGUF"
+model_quant = "Q8_0"
+ctx = 131072
+parallel = 1
+kv_type = "q8_0"
+image_type = "builder"
+llama_cpp_repo = "fairydreaming/llama.cpp"
+llama_cpp_ref = "deepseek-dsa"
+description = "DSv4-Flash Q8_0 (282 GB) on 4×H100 (320 GB). Near-lossless quality."
 
 [[recipes]]
-name            = "dsv4-pro-5xh200"
-provider        = "vllm"
-label           = "DSv4-Pro 1.6T  FP4+FP8  384K ctx  (5×H200) 🏆"
-gpu             = "h200-sxm-5x"
-model_id        = "deepseek-ai/DeepSeek-V4-Pro"
-ctx             = 393216
-image_type      = "vllm"
-kv_cache_dtype  = "fp8"
-enforce_eager   = "false"
+name = "dsv4-pro-5xh200"
+provider = "vllm"
+label = "DSv4-Pro 1.6T  FP4+FP8  384K ctx  (5×H200) 🏆"
+gpu = "h200-sxm-5x"
+model_id = "deepseek-ai/DeepSeek-V4-Pro"
+ctx = 393216
+image_type = "vllm"
+kv_cache_dtype = "fp8"
+enforce_eager = "false"
 reasoning_parser = "deepseek_r1"
-description     = "DSv4-Pro FP4+FP8 (805 GB) on 5×H200 (705 GB). Sweet spot: ~40 t/s, $17.50/hr."
+description = "DSv4-Pro FP4+FP8 (805 GB) on 5×H200 (705 GB). Sweet spot: ~40 t/s, $17.50/hr."
 
 [[recipes]]
-name            = "dsv4-pro-4xb200"
-provider        = "vllm"
-label           = "DSv4-Pro 1.6T  FP4+FP8  384K ctx  (4×B200) 🦾"
-gpu             = "b200-sxm-4x"
-model_id        = "deepseek-ai/DeepSeek-V4-Pro"
-ctx             = 393216
-image_type      = "vllm"
-kv_cache_dtype  = "fp8"
+name = "dsv4-pro-4xb200"
+provider = "vllm"
+label = "DSv4-Pro 1.6T  FP4+FP8  384K ctx  (4×B200) 🦾"
+gpu = "b200-sxm-4x"
+model_id = "deepseek-ai/DeepSeek-V4-Pro"
+ctx = 393216
+image_type = "vllm"
+kv_cache_dtype = "fp8"
 reasoning_parser = "deepseek_r1"
-description     = "DSv4-Pro FP4+FP8 (805 GB) on 4×B200 (768 GB). Baller: ~59 t/s, $22/hr."
+description = "DSv4-Pro FP4+FP8 (805 GB) on 4×B200 (768 GB). Baller: ~59 t/s, $22/hr."
 
 [[recipes]]
-name            = "dsv4-pro-8xh100"
-provider        = "vllm"
-label           = "DSv4-Pro 1.6T  FP4+FP8  256K ctx  (8×H100)"
-gpu             = "h100-sxm-8x"
-model_id        = "deepseek-ai/DeepSeek-V4-Pro"
-ctx             = 262144
-image_type      = "vllm"
-kv_cache_dtype  = "fp8"
-enforce_eager   = "true"
+name = "dsv4-pro-8xh100"
+provider = "vllm"
+label = "DSv4-Pro 1.6T  FP4+FP8  256K ctx  (8×H100)"
+gpu = "h100-sxm-8x"
+model_id = "deepseek-ai/DeepSeek-V4-Pro"
+ctx = 262144
+image_type = "vllm"
+kv_cache_dtype = "fp8"
+enforce_eager = "true"
 reasoning_parser = "deepseek_r1"
-description     = "DSv4-Pro FP4+FP8 (805 GB) on 8×H100 (640 GB). Tight fit, enforce-eager saves VRAM. ~50 t/s."
+description = "DSv4-Pro FP4+FP8 (805 GB) on 8×H100 (640 GB). Tight fit, enforce-eager saves VRAM. ~50 t/s."
 
 [[recipes]]
-name            = "dsv4-pro-4xh200"
-provider        = "vllm"
-label           = "DSv4-Pro 1.6T  FP4+FP8  256K ctx  (4×H200) 💰"
-gpu             = "h200-sxm-4x"
-model_id        = "deepseek-ai/DeepSeek-V4-Pro"
-ctx             = 262144
-image_type      = "vllm"
-kv_cache_dtype  = "fp8"
-enforce_eager   = "true"
+name = "dsv4-pro-4xh200"
+provider = "vllm"
+label = "DSv4-Pro 1.6T  FP4+FP8  256K ctx  (4×H200) 💰"
+gpu = "h200-sxm-4x"
+model_id = "deepseek-ai/DeepSeek-V4-Pro"
+ctx = 262144
+image_type = "vllm"
+kv_cache_dtype = "fp8"
+enforce_eager = "true"
 reasoning_parser = "deepseek_r1"
-description     = "DSv4-Pro FP4+FP8 (805 GB) on 4×H200 (564 GB). Budget: enforce-eager + shorter ctx. ~35 t/s, $14/hr."
+description = "DSv4-Pro FP4+FP8 (805 GB) on 4×H200 (564 GB). Budget: enforce-eager + shorter ctx. ~35 t/s, $14/hr."
 
 [[recipes]]
-name            = "dsv4-pro-8xa100"
-provider        = "vllm"
-label           = "DSv4-Pro 1.6T  FP4+FP8  128K ctx  (8×A100) 💰"
-gpu             = "a100-sxm-8x"
-model_id        = "deepseek-ai/DeepSeek-V4-Pro"
-ctx             = 131072
-image_type      = "vllm"
-kv_cache_dtype  = "fp8"
-enforce_eager   = "true"
+name = "dsv4-pro-8xa100"
+provider = "vllm"
+label = "DSv4-Pro 1.6T  FP4+FP8  128K ctx  (8×A100) 💰"
+gpu = "a100-sxm-8x"
+model_id = "deepseek-ai/DeepSeek-V4-Pro"
+ctx = 131072
+image_type = "vllm"
+kv_cache_dtype = "fp8"
+enforce_eager = "true"
 reasoning_parser = "deepseek_r1"
-description     = "DSv4-Pro FP4+FP8 (805 GB) on 8×A100 (640 GB). Budget option: ~27 t/s, $9.60/hr. Shorter ctx."
-
-# ── DeepSeek V4 Flash on vLLM (for users who prefer vLLM over llama.cpp) ─────
+description = "DSv4-Pro FP4+FP8 (805 GB) on 8×A100 (640 GB). Budget option: ~27 t/s, $9.60/hr. Shorter ctx."
 
 [[recipes]]
-name            = "dsv4-flash-vllm-4xh100"
-provider        = "vllm"
-label           = "DSv4-Flash 284B  FP4+FP8  384K ctx  (4×H100, vLLM)"
-gpu             = "h100-sxm-4x"
-model_id        = "deepseek-ai/DeepSeek-V4-Flash"
-ctx             = 393216
-image_type      = "vllm"
-kv_cache_dtype  = "fp8"
+name = "dsv4-flash-vllm-4xh100"
+provider = "vllm"
+label = "DSv4-Flash 284B  FP4+FP8  384K ctx  (4×H100, vLLM)"
+gpu = "h100-sxm-4x"
+model_id = "deepseek-ai/DeepSeek-V4-Flash"
+ctx = 393216
+image_type = "vllm"
+kv_cache_dtype = "fp8"
 reasoning_parser = "deepseek_r1"
-description     = "DSv4-Flash via vLLM on 4×H100 (320 GB). Official FP4+FP8 weights, no GGUF needed."
+description = "DSv4-Flash via vLLM on 4×H100 (320 GB). Official FP4+FP8 weights, no GGUF needed."
 
 [[recipes]]
-name            = "dsv4-flash-vllm-2xh200"
-provider        = "vllm"
-label           = "DSv4-Flash 284B  FP4+FP8  512K ctx  (2×H200, vLLM)"
-gpu             = "h200-sxm-2x"
-model_id        = "deepseek-ai/DeepSeek-V4-Flash"
-ctx             = 524288
-image_type      = "vllm"
-kv_cache_dtype  = "fp8"
+name = "dsv4-flash-vllm-2xh200"
+provider = "vllm"
+label = "DSv4-Flash 284B  FP4+FP8  512K ctx  (2×H200, vLLM)"
+gpu = "h200-sxm-2x"
+model_id = "deepseek-ai/DeepSeek-V4-Flash"
+ctx = 524288
+image_type = "vllm"
+kv_cache_dtype = "fp8"
 reasoning_parser = "deepseek_r1"
-description     = "DSv4-Flash via vLLM on 2×H200 (282 GB). Generous ctx, native precision."
-
-# ── consumer recipes — RTX 5090 32GB ─────────────────────────────────────────
+description = "DSv4-Flash via vLLM on 2×H200 (282 GB). Generous ctx, native precision."
 
 [[recipes]]
-name        = "qwen36-27b-q6-5090"
-label       = "Qwen3.6-27B  Q6_K  96K ctx"
-gpu         = "5090"
-model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+name = "qwen36-27b-q6-5090"
+label = "Qwen3.6-27B  Q6_K  96K ctx"
+gpu = "5090"
+model_repo = "unsloth/Qwen3.6-27B-GGUF"
 model_quant = "UD-Q6_K_XL"
-ctx         = 98304
-parallel    = 1
-kv_type     = "q8_0"
+ctx = 98304
+parallel = 1
+kv_type = "q8_0"
 description = "Dense 27B near-lossless quality. Best single-user throughput on 5090."
 
 [[recipes]]
-name        = "qwen36-27b-q5-256k-5090"
-label       = "Qwen3.6-27B  Q5_K  256K ctx  (dense squeeze)"
-gpu         = "5090"
-model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+name = "qwen36-27b-q5-256k-5090"
+label = "Qwen3.6-27B  Q5_K  256K ctx  (dense squeeze)"
+gpu = "5090"
+model_repo = "unsloth/Qwen3.6-27B-GGUF"
 model_quant = "UD-Q5_K_XL"
-ctx         = 262144
-parallel    = 1
-kv_type     = "q4_0"
+ctx = 262144
+parallel = 1
+kv_type = "q4_0"
 description = "Dense 27B at 256K ctx on 32GB — needs q4_0 KV to fit. ~27.7 GB total, +3.8 GB headroom."
 
 [[recipes]]
-name        = "qwen36-35b-moe-q5-5090"
-label       = "Qwen3.6-35B-A3B MoE  Q5_K  128K ctx"
-gpu         = "5090"
-model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+name = "qwen36-35b-moe-q5-5090"
+label = "Qwen3.6-35B-A3B MoE  Q5_K  128K ctx"
+gpu = "5090"
+model_repo = "unsloth/Qwen3.6-35B-A3B-GGUF"
 model_quant = "UD-Q5_K_XL"
-ctx         = 131072
-parallel    = 1
-kv_type     = "q8_0"
+ctx = 131072
+parallel = 1
+kv_type = "q8_0"
 description = "MoE 35B at Q5. Hybrid-linear attention — only 10/40 layers full-attn. Great quality."
 
 [[recipes]]
-name        = "qwen36-35b-moe-256k-5090"
-label       = "Qwen3.6-35B-A3B MoE  Q5_K  256K ctx  (tight)"
-gpu         = "5090"
-model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+name = "qwen36-35b-moe-256k-5090"
+label = "Qwen3.6-35B-A3B MoE  Q5_K  256K ctx  (tight)"
+gpu = "5090"
+model_repo = "unsloth/Qwen3.6-35B-A3B-GGUF"
 model_quant = "UD-Q5_K_XL"
-ctx         = 262144
-parallel    = 1
-kv_type     = "q4_0"
+ctx = 262144
+parallel = 1
+kv_type = "q4_0"
 description = "256K on 32GB via q4_0 KV. ~27 GiB total. Solo slot. Hybrid-linear KV is tiny."
 
 [[recipes]]
-name        = "carnice-27b-q5-96k-5090"
-label       = "Carnice-V2-27B  Q5_K  96K  🤖 hermes-tuned"
-gpu         = "5090"
-model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+name = "carnice-27b-q5-96k-5090"
+label = "Carnice-V2-27B  Q5_K  96K  🤖 hermes-tuned"
+gpu = "5090"
+model_repo = "kai-os/Carnice-V2-27b-GGUF"
 model_quant = "Q5_K_M"
-ctx         = 98304
-parallel    = 1
-kv_type     = "q8_0"
+ctx = 98304
+parallel = 1
+kv_type = "q8_0"
 description = "Carnice SFT on Hermes traces. Q5 = 19.2 GiB, 96K q8_0 KV = 5.5 GiB. ~24.7 GiB total. A/B vs qwen36-27b-q6-5090."
 
 [[recipes]]
-name        = "carnice-27b-q5-256k-5090"
-label       = "Carnice-V2-27B  Q5_K  256K  🤖 hermes-tuned"
-gpu         = "5090"
-model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+name = "carnice-27b-q5-256k-5090"
+label = "Carnice-V2-27B  Q5_K  256K  🤖 hermes-tuned"
+gpu = "5090"
+model_repo = "kai-os/Carnice-V2-27b-GGUF"
 model_quant = "Q5_K_M"
-ctx         = 262144
-parallel    = 1
-kv_type     = "q4_0"
+ctx = 262144
+parallel = 1
+kv_type = "q4_0"
 description = "Carnice at 256K via q4_0 KV. ~26.6 GiB total. A/B vs qwen36-27b-q5-256k-5090."
 
 [[recipes]]
-name        = "carnice-27b-q4-2x96k-5090"
-label       = "Carnice-V2-27B  Q4_K  2×96K  🤖 hermes-tuned"
-gpu         = "5090"
-model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+name = "carnice-27b-q4-2x96k-5090"
+label = "Carnice-V2-27B  Q4_K  2×96K  🤖 hermes-tuned"
+gpu = "5090"
+model_repo = "kai-os/Carnice-V2-27b-GGUF"
 model_quant = "Q4_K_M"
-ctx         = 196608
-parallel    = 2
-kv_type     = "q8_0"
+ctx = 196608
+parallel = 2
+kv_type = "q8_0"
 description = "Q4 weights (16.6 GiB) unlock 2 parallel 96K slots on 5090. ~27.6 GiB total. 1+1 orchestration on a consumer card."
 
 [[recipes]]
-name        = "carnice-moe-q5-3x128k-5090"
-label       = "Carnice MoE 35B-A3B  Q5_K  3×128K  🤖 hermes-tuned"
-gpu         = "5090"
-model_repo  = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
+name = "carnice-moe-q5-3x128k-5090"
+label = "Carnice MoE 35B-A3B  Q5_K  3×128K  🤖 hermes-tuned"
+gpu = "5090"
+model_repo = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
 model_quant = "Q5_K_M"
-ctx         = 393216
-parallel    = 3
-kv_type     = "q8_0"
+ctx = 393216
+parallel = 3
+kv_type = "q8_0"
 description = "Carnice MoE at 3 slots on 5090. Hybrid-linear KV = 1.36 GiB per 128K slot. ~28.8 GiB total. 1+2 orchestration on consumer HW."
 
 [[recipes]]
-name        = "carnice-moe-q4-3x256k-5090"
-label       = "Carnice MoE 35B-A3B  Q4_K  3×256K  🤖 hermes-tuned  (hero)"
-gpu         = "5090"
-model_repo  = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
+name = "carnice-moe-q4-3x256k-5090"
+label = "Carnice MoE 35B-A3B  Q4_K  3×256K  🤖 hermes-tuned  (hero)"
+gpu = "5090"
+model_repo = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
 model_quant = "Q4_K_M"
-ctx         = 786432
-parallel    = 3
-kv_type     = "q8_0"
+ctx = 786432
+parallel = 3
+kv_type = "q8_0"
 description = "Hero recipe: 3 slots × 256K on 32GB. Q4 (21.2 GiB) + hybrid KV (8.2 GiB) = ~29.4 GiB. Fits. Hermes orchestration at 256K per slot on a consumer card."
 
-# ── consumer recipes — RTX 4090 24GB ─────────────────────────────────────────
-
 [[recipes]]
-name        = "qwen36-27b-q4-4090"
-label       = "Qwen3.6-27B  Q4_K  64K ctx"
-gpu         = "4090"
-model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+name = "qwen36-27b-q4-4090"
+label = "Qwen3.6-27B  Q4_K  64K ctx"
+gpu = "4090"
+model_repo = "unsloth/Qwen3.6-27B-GGUF"
 model_quant = "UD-Q4_K_XL"
-ctx         = 65536
-parallel    = 1
-kv_type     = "q8_0"
+ctx = 65536
+parallel = 1
+kv_type = "q8_0"
 description = "Dense 27B at Q4 on 24GB. Good value at ~$0.28/hr."
 
 [[recipes]]
-name        = "qwen36-35b-moe-q4-4090"
-label       = "Qwen3.6-35B-A3B MoE  Q4_K  48K ctx"
-gpu         = "4090"
-model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+name = "qwen36-35b-moe-q4-4090"
+label = "Qwen3.6-35B-A3B MoE  Q4_K  48K ctx"
+gpu = "4090"
+model_repo = "unsloth/Qwen3.6-35B-A3B-GGUF"
 model_quant = "UD-Q4_K_XL"
-ctx         = 49152
-parallel    = 1
-kv_type     = "q8_0"
+ctx = 49152
+parallel = 1
+kv_type = "q8_0"
 description = "MoE 35B on 4090. Tight fit, hybrid-linear KV saves the day."
 
 [[recipes]]
-name        = "carnice-27b-q4-64k-4090"
-label       = "Carnice-V2-27B  Q4_K  64K  🤖 hermes-tuned"
-gpu         = "4090"
-model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+name = "carnice-27b-q4-64k-4090"
+label = "Carnice-V2-27B  Q4_K  64K  🤖 hermes-tuned"
+gpu = "4090"
+model_repo = "kai-os/Carnice-V2-27b-GGUF"
 model_quant = "Q4_K_M"
-ctx         = 65536
-parallel    = 1
-kv_type     = "q8_0"
+ctx = 65536
+parallel = 1
+kv_type = "q8_0"
 description = "Carnice SFT on 4090. Q4 (16.6 GiB) + 64K q8_0 KV (3.7 GiB) = ~20.3 GiB. A/B vs qwen36-27b-q4-4090."
 
 [[recipes]]
-name        = "carnice-moe-q4-48k-4090"
-label       = "Carnice MoE 35B-A3B  Q4_K  48K  🤖 hermes-tuned"
-gpu         = "4090"
-model_repo  = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
+name = "carnice-moe-q4-48k-4090"
+label = "Carnice MoE 35B-A3B  Q4_K  48K  🤖 hermes-tuned"
+gpu = "4090"
+model_repo = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
 model_quant = "Q4_K_M"
-ctx         = 49152
-parallel    = 1
-kv_type     = "q8_0"
+ctx = 49152
+parallel = 1
+kv_type = "q8_0"
 description = "Carnice MoE on 4090. Q4 (21.2 GiB) + hybrid 48K KV (~0.5 GiB) = ~21.7 GiB. A/B vs qwen36-35b-moe-q4-4090."
 
-# ── consumer recipes — RTX PRO 6000 96GB ─────────────────────────────────────
-
 [[recipes]]
-name        = "qwen36-35b-moe-beast-6000pro"
-label       = "Qwen3.6-35B-A3B MoE  Q8_K  6×256K  (beast)"
-gpu         = "6000pro"
-model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+name = "qwen36-35b-moe-beast-6000pro"
+label = "Qwen3.6-35B-A3B MoE  Q8_K  6×256K  (beast)"
+gpu = "6000pro"
+model_repo = "unsloth/Qwen3.6-35B-A3B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 1572864
-parallel    = 6
-kv_type     = "q8_0"
+ctx = 1572864
+parallel = 6
+kv_type = "q8_0"
 min_disk_gb = 80
 description = "Max quality. 6 slots × 256K. ~58 GiB used. Main + 5 sub-agents at full ctx."
 
 [[recipes]]
-name        = "qwen36-35b-moe-q6-6000pro"
-label       = "Qwen3.6-35B-A3B MoE  Q6_K  4×256K"
-gpu         = "6000pro"
-model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+name = "qwen36-35b-moe-q6-6000pro"
+label = "Qwen3.6-35B-A3B MoE  Q6_K  4×256K"
+gpu = "6000pro"
+model_repo = "unsloth/Qwen3.6-35B-A3B-GGUF"
 model_quant = "UD-Q6_K_XL"
-ctx         = 1048576
-parallel    = 4
-kv_type     = "q8_0"
+ctx = 1048576
+parallel = 4
+kv_type = "q8_0"
 description = "Conservative 6000 Pro: Q6 weights, 4 slots × 256K, faster per-stream."
 
 [[recipes]]
-name        = "qwen36-27b-dense-q8-6000pro"
-label       = "Qwen3.6-27B  Q8_K  4×128K"
-gpu         = "6000pro"
-model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+name = "qwen36-27b-dense-q8-6000pro"
+label = "Qwen3.6-27B  Q8_K  4×128K"
+gpu = "6000pro"
+model_repo = "unsloth/Qwen3.6-27B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 524288
-parallel    = 4
-kv_type     = "q8_0"
+ctx = 524288
+parallel = 4
+kv_type = "q8_0"
 description = "Dense 27B full Q8 quality. Dense KV is fat — 4×128K sweet spot."
 
 [[recipes]]
-name        = "qwen36-27b-q8-4x256k-6000pro"
-label       = "Qwen3.6-27B  Q8_K  4×256K  q8 KV"
-gpu         = "6000pro"
-model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+name = "qwen36-27b-q8-4x256k-6000pro"
+label = "Qwen3.6-27B  Q8_K  4×256K  q8 KV"
+gpu = "6000pro"
+model_repo = "unsloth/Qwen3.6-27B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 1048576
-parallel    = 4
-kv_type     = "q8_0"
+ctx = 1048576
+parallel = 4
+kv_type = "q8_0"
 description = "Dense 27B lossless Q8 at 256K. 4 slots × 256K, ~29 GiB weights + ~59 GiB KV = ~88 GiB. ~8 GiB headroom on 96GB."
 
 [[recipes]]
-name        = "qwen36-27b-q8-8x256k-6000pro"
-label       = "Qwen3.6-27B  Q8_K  8×256K  q4 KV"
-gpu         = "6000pro"
-model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+name = "qwen36-27b-q8-8x256k-6000pro"
+label = "Qwen3.6-27B  Q8_K  8×256K  q4 KV"
+gpu = "6000pro"
+model_repo = "unsloth/Qwen3.6-27B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 2097152
-parallel    = 8
-kv_type     = "q4_0"
+ctx = 2097152
+parallel = 8
+kv_type = "q4_0"
 description = "Dense 27B Q8 weights, q4_0 KV for max slots. 8 slots × 256K, ~29 GiB weights + ~59 GiB KV = ~88 GiB. Same headroom, double the parallelism."
 
 [[recipes]]
-name        = "carnice-27b-q8-4x256k-6000pro"
-label       = "Carnice-V2-27B  Q8  4×256K  q8 KV  🤖 hermes-tuned"
-gpu         = "6000pro"
-model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+name = "carnice-27b-q8-4x256k-6000pro"
+label = "Carnice-V2-27B  Q8  4×256K  q8 KV  🤖 hermes-tuned"
+gpu = "6000pro"
+model_repo = "kai-os/Carnice-V2-27b-GGUF"
 model_quant = "Q8_0"
-ctx         = 1048576
-parallel    = 4
-kv_type     = "q8_0"
+ctx = 1048576
+parallel = 4
+kv_type = "q8_0"
 description = "Carnice SFT Q8. 4 slots × 256K, ~28.6 GiB weights + ~59 GiB KV = ~88 GiB. A/B vs qwen36-27b-q8-4x256k-6000pro."
 
 [[recipes]]
-name        = "carnice-27b-q8-8x256k-6000pro"
-label       = "Carnice-V2-27B  Q8  8×256K  q4 KV  🤖 hermes-tuned"
-gpu         = "6000pro"
-model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+name = "carnice-27b-q8-8x256k-6000pro"
+label = "Carnice-V2-27B  Q8  8×256K  q4 KV  🤖 hermes-tuned"
+gpu = "6000pro"
+model_repo = "kai-os/Carnice-V2-27b-GGUF"
 model_quant = "Q8_0"
-ctx         = 2097152
-parallel    = 8
-kv_type     = "q4_0"
+ctx = 2097152
+parallel = 8
+kv_type = "q4_0"
 description = "Carnice SFT Q8, q4_0 KV for max slots. 8 slots × 256K. A/B vs qwen36-27b-q8-8x256k-6000pro."
 
 [[recipes]]
-name        = "carnice-moe-q8-6x256k-6000pro"
-label       = "Carnice MoE 35B-A3B  Q8  6×256K  🤖 hermes-tuned"
-gpu         = "6000pro"
-model_repo  = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
+name = "carnice-moe-q8-6x256k-6000pro"
+label = "Carnice MoE 35B-A3B  Q8  6×256K  🤖 hermes-tuned"
+gpu = "6000pro"
+model_repo = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
 model_quant = "Q8_0"
-ctx         = 1572864
-parallel    = 6
-kv_type     = "q8_0"
+ctx = 1572864
+parallel = 6
+kv_type = "q8_0"
 description = "Carnice MoE Q8 (36.9 GiB) + hybrid 6×256K KV (16.3 GiB) = ~55 GiB. Plenty of headroom on 96GB. A/B vs qwen36-35b-moe-beast-6000pro."
 
-# ── datacenter recipes — H100 SXM 80GB (SM90) ────────────────────────────────
-
 [[recipes]]
-name        = "qwen36-35b-moe-q8-h100"
-label       = "Qwen3.6-35B-A3B  Q8_K  8×256K  (hybrid KV magic)"
-gpu         = "h100-sxm"
-model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+name = "qwen36-35b-moe-q8-h100"
+label = "Qwen3.6-35B-A3B  Q8_K  8×256K  (hybrid KV magic)"
+gpu = "h100-sxm"
+model_repo = "unsloth/Qwen3.6-35B-A3B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 2097152
-parallel    = 8
-kv_type     = "q8_0"
+ctx = 2097152
+parallel = 8
+kv_type = "q8_0"
 description = "Hybrid-linear arch: only 10/41 layers use full KV — 2.7 GB per 256K slot. 8 slots use ~58 GiB total. ~136 t/s confirmed."
 
 [[recipes]]
-name        = "carnice-moe-35b-q8-h100"
-label       = "Carnice MoE 35B-A3B  Q8  8×256K  🤖 hermes-tuned"
-gpu         = "h100-sxm"
-model_repo  = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
+name = "carnice-moe-35b-q8-h100"
+label = "Carnice MoE 35B-A3B  Q8  8×256K  🤖 hermes-tuned"
+gpu = "h100-sxm"
+model_repo = "samuelcardillo/Carnice-Qwen3.6-MoE-35B-A3B-GGUF"
 model_quant = "Q8_0"
-ctx         = 2097152
-parallel    = 8
-kv_type     = "q8_0"
+ctx = 2097152
+parallel = 8
+kv_type = "q8_0"
 description = "Carnice QLoRA on MoE 35B-A3B. Two-stage: reasoning repair then Hermes agent traces. Q8_0 = 36.9 GiB. Same 8×256K slot config as base. A/B vs qwen36-35b-moe-q8-h100."
 
 [[recipes]]
-name        = "qwen36-35b-moe-q8-12slot-h100"
-label       = "Qwen3.6-35B-A3B  Q8_K  12×256K  (max slots)"
-gpu         = "h100-sxm"
-model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+name = "qwen36-35b-moe-q8-12slot-h100"
+label = "Qwen3.6-35B-A3B  Q8_K  12×256K  (max slots)"
+gpu = "h100-sxm"
+model_repo = "unsloth/Qwen3.6-35B-A3B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 3145728
-parallel    = 12
-kv_type     = "q8_0"
+ctx = 3145728
+parallel = 12
+kv_type = "q8_0"
 description = "12 parallel 256K slots — KV only 33 GB total due to hybrid arch. Bold but fits. Drop to 8 if OOM on first run."
 
 [[recipes]]
-name        = "qwen36-27b-q8-3x256k-h100"
-label       = "Qwen3.6-27B  Q8_K  3×256K  q8 KV"
-gpu         = "h100-sxm"
-model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+name = "qwen36-27b-q8-3x256k-h100"
+label = "Qwen3.6-27B  Q8_K  3×256K  q8 KV"
+gpu = "h100-sxm"
+model_repo = "unsloth/Qwen3.6-27B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 786432
-parallel    = 3
-kv_type     = "q8_0"
+ctx = 786432
+parallel = 3
+kv_type = "q8_0"
 description = "Dense 27B lossless Q8 at 256K ctx. 3 slots × 256K, ~29 GiB weights + ~44 GiB KV = ~75 GiB. Solid ~5 GiB headroom on H100."
 
 [[recipes]]
-name        = "qwen36-27b-q8-6x256k-h100"
-label       = "Qwen3.6-27B  Q8_K  6×256K  q4 KV"
-gpu         = "h100-sxm"
-model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+name = "qwen36-27b-q8-6x256k-h100"
+label = "Qwen3.6-27B  Q8_K  6×256K  q4 KV"
+gpu = "h100-sxm"
+model_repo = "unsloth/Qwen3.6-27B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 1572864
-parallel    = 6
-kv_type     = "q4_0"
+ctx = 1572864
+parallel = 6
+kv_type = "q4_0"
 description = "Dense 27B Q8 weights, q4_0 KV to double the slots. 6 slots × 256K, ~29 GiB weights + ~44 GiB KV = ~75 GiB. Same total as 3-slot but twice the parallelism at a small KV quality cost."
 
 [[recipes]]
-name        = "carnice-27b-q8-3x256k-h100"
-label       = "Carnice-V2-27B  Q8  3×256K  q8 KV  🤖 hermes-tuned"
-gpu         = "h100-sxm"
-model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+name = "carnice-27b-q8-3x256k-h100"
+label = "Carnice-V2-27B  Q8  3×256K  q8 KV  🤖 hermes-tuned"
+gpu = "h100-sxm"
+model_repo = "kai-os/Carnice-V2-27b-GGUF"
 model_quant = "Q8_0"
-ctx         = 786432
-parallel    = 3
-kv_type     = "q8_0"
+ctx = 786432
+parallel = 3
+kv_type = "q8_0"
 description = "Carnice SFT on Hermes agent traces. Full merged BF16→Q8. 3×256K, same VRAM profile as base. A/B vs qwen36-27b-q8-3x256k-h100."
 
 [[recipes]]
-name        = "carnice-27b-q8-6x256k-h100"
-label       = "Carnice-V2-27B  Q8  6×256K  q4 KV  🤖 hermes-tuned"
-gpu         = "h100-sxm"
-model_repo  = "kai-os/Carnice-V2-27b-GGUF"
+name = "carnice-27b-q8-6x256k-h100"
+label = "Carnice-V2-27B  Q8  6×256K  q4 KV  🤖 hermes-tuned"
+gpu = "h100-sxm"
+model_repo = "kai-os/Carnice-V2-27b-GGUF"
 model_quant = "Q8_0"
-ctx         = 1572864
-parallel    = 6
-kv_type     = "q4_0"
+ctx = 1572864
+parallel = 6
+kv_type = "q4_0"
 description = "Carnice SFT, 6 parallel 256K slots via q4_0 KV. A/B vs qwen36-27b-q8-6x256k-h100."
 
 [[recipes]]
-name        = "qwen36-27b-q8-h100"
-label       = "Qwen3.6-27B  Q8_K  8×128K"
-gpu         = "h100-sxm"
-model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+name = "qwen36-27b-q8-h100"
+label = "Qwen3.6-27B  Q8_K  8×128K"
+gpu = "h100-sxm"
+model_repo = "unsloth/Qwen3.6-27B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 1048576
-parallel    = 8
-kv_type     = "q8_0"
+ctx = 1048576
+parallel = 8
+kv_type = "q8_0"
 description = "Dense 27B lossless quality. 8 slots × 128K, ~44 GiB total on H100."
 
 [[recipes]]
-name        = "qwen35-27b-q8-h100"
-label       = "Qwen3.5-27B  Q8  8×128K"
-gpu         = "h100-sxm"
-model_repo  = "unsloth/Qwen3.5-27B-GGUF"
+name = "qwen35-27b-q8-h100"
+label = "Qwen3.5-27B  Q8  8×128K"
+gpu = "h100-sxm"
+model_repo = "unsloth/Qwen3.5-27B-GGUF"
 model_quant = "Q8_0"
-ctx         = 1048576
-parallel    = 8
-kv_type     = "q8_0"
+ctx = 1048576
+parallel = 8
+kv_type = "q8_0"
 description = "Qwen3.5 dense 27B at lossless Q8. ~29 GiB weights + ~40 GiB KV. Fast and sharp."
 
 [[recipes]]
-name        = "qwen35-35b-moe-q8-h100"
-label       = "Qwen3.5-35B-A3B  Q8  3×256K"
-gpu         = "h100-sxm"
-model_repo  = "unsloth/Qwen3.5-35B-A3B-GGUF"
+name = "qwen35-35b-moe-q8-h100"
+label = "Qwen3.5-35B-A3B  Q8  3×256K"
+gpu = "h100-sxm"
+model_repo = "unsloth/Qwen3.5-35B-A3B-GGUF"
 model_quant = "Q8_0"
-ctx         = 786432
-parallel    = 3
-kv_type     = "q8_0"
+ctx = 786432
+parallel = 3
+kv_type = "q8_0"
 description = "Qwen3.5 MoE 35B — full transformer (all 64 layers KV), so 3 slots at 256K fits. ~69 GiB total."
 
 [[recipes]]
-name        = "qwen3-vl-30b-q8-h100"
-label       = "Qwen3-VL-30B-A3B  Q8  8×128K  🖼 vision"
-gpu         = "h100-sxm"
-model_repo  = "unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF"
+name = "qwen3-vl-30b-q8-h100"
+label = "Qwen3-VL-30B-A3B  Q8  8×128K  🖼 vision"
+gpu = "h100-sxm"
+model_repo = "unsloth/Qwen3-VL-30B-A3B-Instruct-GGUF"
 model_quant = "Q8_K_XL"
-mmproj      = "F16"
-ctx         = 1048576
-parallel    = 8
-kv_type     = "q8_0"
+mmproj = "F16"
+ctx = 1048576
+parallel = 8
+kv_type = "q8_0"
 min_disk_gb = 120
 description = "Vision MoE: 3B active params + vision encoder. 8 slots × 128K. Image + text in, full ctx depth."
 
 [[recipes]]
-name        = "qwen3-vl-32b-q6-h100"
-label       = "Qwen3-VL-32B  Q6  3×128K  🖼 vision (dense)"
-gpu         = "h100-sxm"
-model_repo  = "unsloth/Qwen3-VL-32B-Instruct-GGUF"
+name = "qwen3-vl-32b-q6-h100"
+label = "Qwen3-VL-32B  Q6  3×128K  🖼 vision (dense)"
+gpu = "h100-sxm"
+model_repo = "unsloth/Qwen3-VL-32B-Instruct-GGUF"
 model_quant = "Q6_K"
-mmproj      = "F16"
-ctx         = 393216
-parallel    = 3
-kv_type     = "q8_0"
+mmproj = "F16"
+ctx = 393216
+parallel = 3
+kv_type = "q8_0"
 min_disk_gb = 120
 description = "Dense 32B vision model Q6. ~26 GiB weights + vision encoder. 3 slots × 128K."
 
 [[recipes]]
-name        = "qwen35-122b-q3-h100"
-label       = "Qwen3.5-122B-A10B  Q3_K_M  2×64K  (big brain)"
-gpu         = "h100-sxm"
-model_repo  = "unsloth/Qwen3.5-122B-A10B-GGUF"
+name = "qwen35-122b-q3-h100"
+label = "Qwen3.5-122B-A10B  Q3_K_M  2×64K  (big brain)"
+gpu = "h100-sxm"
+model_repo = "unsloth/Qwen3.5-122B-A10B-GGUF"
 model_quant = "Q3_K_M"
-ctx         = 131072
-parallel    = 2
-kv_type     = "q4_0"
+ctx = 131072
+parallel = 2
+kv_type = "q4_0"
 min_disk_gb = 150
 description = "122B MoE at Q3 — only quant that fits single H100 (~56 GiB weights + ~22 GiB free). KV q4_0 to stretch ctx. 10B active params = surprisingly fast."
 
 [[recipes]]
-name        = "qwen3-72b-q4-h100"
-label       = "Qwen3.5-72B  Q4_K  1×64K"
-gpu         = "h100-sxm"
-model_repo  = "bartowski/Qwen3-72B-GGUF"
+name = "qwen3-72b-q4-h100"
+label = "Qwen3.5-72B  Q4_K  1×64K"
+gpu = "h100-sxm"
+model_repo = "bartowski/Qwen3-72B-GGUF"
 model_quant = "Q4_K_M"
-ctx         = 65536
-parallel    = 1
-kv_type     = "q8_0"
+ctx = 65536
+parallel = 1
+kv_type = "q8_0"
 description = "72B dense at Q4 on H100 80GB. ~40 GiB weights, ~8 GiB KV. Single slot."
 
-# ── datacenter recipes — H100 PCIe 80GB ──────────────────────────────────────
-
 [[recipes]]
-name        = "qwen36-35b-moe-q8-h100pcie"
-label       = "Qwen3.6-35B-A3B MoE  Q8_K  4×256K"
-gpu         = "h100-pcie"
-model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+name = "qwen36-35b-moe-q8-h100pcie"
+label = "Qwen3.6-35B-A3B MoE  Q8_K  4×256K"
+gpu = "h100-pcie"
+model_repo = "unsloth/Qwen3.6-35B-A3B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 1048576
-parallel    = 4
-kv_type     = "q8_0"
+ctx = 1048576
+parallel = 4
+kv_type = "q8_0"
 description = "Same as H100 SXM recipe, lower bandwidth than SXM but cheaper."
 
 [[recipes]]
-name        = "qwen3-72b-q4-h100pcie"
-label       = "Qwen3-72B  Q4_K  1×64K"
-gpu         = "h100-pcie"
-model_repo  = "bartowski/Qwen3-72B-GGUF"
+name = "qwen3-72b-q4-h100pcie"
+label = "Qwen3-72B  Q4_K  1×64K"
+gpu = "h100-pcie"
+model_repo = "bartowski/Qwen3-72B-GGUF"
 model_quant = "Q4_K_M"
-ctx         = 65536
-parallel    = 1
-kv_type     = "q8_0"
+ctx = 65536
+parallel = 1
+kv_type = "q8_0"
 description = "72B dense at Q4 on H100 PCIe 80GB."
 
-# ── datacenter recipes — A100 SXM/PCIe 80GB (SM80) ───────────────────────────
-
 [[recipes]]
-name        = "qwen36-35b-moe-q6-a100"
-label       = "Qwen3.6-35B-A3B MoE  Q6_K  4×128K"
-gpu         = "a100-sxm"
-model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+name = "qwen36-35b-moe-q6-a100"
+label = "Qwen3.6-35B-A3B MoE  Q6_K  4×128K"
+gpu = "a100-sxm"
+model_repo = "unsloth/Qwen3.6-35B-A3B-GGUF"
 model_quant = "UD-Q6_K_XL"
-ctx         = 524288
-parallel    = 4
-kv_type     = "q8_0"
+ctx = 524288
+parallel = 4
+kv_type = "q8_0"
 description = "MoE 35B Q6 on A100 80GB. 4 slots × 128K. Good quality/speed tradeoff."
 
 [[recipes]]
-name        = "qwen36-27b-q8-a100"
-label       = "Qwen3.6-27B  Q8_K  2×96K"
-gpu         = "a100-sxm"
-model_repo  = "unsloth/Qwen3.6-27B-GGUF"
+name = "qwen36-27b-q8-a100"
+label = "Qwen3.6-27B  Q8_K  2×96K"
+gpu = "a100-sxm"
+model_repo = "unsloth/Qwen3.6-27B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 196608
-parallel    = 2
-kv_type     = "q8_0"
+ctx = 196608
+parallel = 2
+kv_type = "q8_0"
 description = "Dense 27B lossless on A100. 2 slots × 96K."
 
 [[recipes]]
-name        = "qwen3-72b-q4-a100"
-label       = "Qwen3-72B  Q4_K  1×48K"
-gpu         = "a100-sxm"
-model_repo  = "bartowski/Qwen3-72B-GGUF"
+name = "qwen3-72b-q4-a100"
+label = "Qwen3-72B  Q4_K  1×48K"
+gpu = "a100-sxm"
+model_repo = "bartowski/Qwen3-72B-GGUF"
 model_quant = "Q4_K_M"
-ctx         = 49152
-parallel    = 1
-kv_type     = "q8_0"
+ctx = 49152
+parallel = 1
+kv_type = "q8_0"
 description = "72B dense at Q4 on A100 80GB. Tight — ~40 GiB weights + ~6 GiB KV."
 
 [[recipes]]
-name        = "qwen36-35b-moe-q6-a100pcie"
-label       = "Qwen3.6-35B-A3B MoE  Q6_K  4×128K"
-gpu         = "a100-pcie"
-model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+name = "qwen36-35b-moe-q6-a100pcie"
+label = "Qwen3.6-35B-A3B MoE  Q6_K  4×128K"
+gpu = "a100-pcie"
+model_repo = "unsloth/Qwen3.6-35B-A3B-GGUF"
 model_quant = "UD-Q6_K_XL"
-ctx         = 524288
-parallel    = 4
-kv_type     = "q8_0"
+ctx = 524288
+parallel = 4
+kv_type = "q8_0"
 description = "Same as A100 SXM recipe, PCIe variant."
 
-# ── datacenter recipes — H200 SXM 141GB (SM90) ───────────────────────────────
-
 [[recipes]]
-name        = "qwen3-72b-q6-h200"
-label       = "Qwen3-72B  Q6_K  2×128K"
-gpu         = "h200-sxm"
-model_repo  = "bartowski/Qwen3-72B-GGUF"
+name = "qwen3-72b-q6-h200"
+label = "Qwen3-72B  Q6_K  2×128K"
+gpu = "h200-sxm"
+model_repo = "bartowski/Qwen3-72B-GGUF"
 model_quant = "Q6_K_L"
-ctx         = 262144
-parallel    = 2
-kv_type     = "q8_0"
+ctx = 262144
+parallel = 2
+kv_type = "q8_0"
 description = "72B dense Q6 on H200 141GB. ~57 GiB weights + ~30 GiB KV. Very fast."
 
 [[recipes]]
 name = "qwen36-35b-moe-q8-8slot-h200"
-label       = "Qwen3.6-35B-A3B MoE  Q8_K  8×256K"
-gpu         = "h200-sxm"
-model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+label = "Qwen3.6-35B-A3B MoE  Q8_K  8×256K"
+gpu = "h200-sxm"
+model_repo = "unsloth/Qwen3.6-35B-A3B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 2097152
-parallel    = 8
-kv_type     = "q8_0"
+ctx = 2097152
+parallel = 8
+kv_type = "q8_0"
 description = "MoE 35B Q8 with 8 slots × 256K on 141GB. ~38 GiB weights + ~85 GiB KV pool."
 
 [[recipes]]
-name        = "qwen3-72b-q8-h200"
-label       = "Qwen3-72B  Q8_0  1×64K"
-gpu         = "h200-sxm"
-model_repo  = "bartowski/Qwen3-72B-GGUF"
+name = "qwen3-72b-q8-h200"
+label = "Qwen3-72B  Q8_0  1×64K"
+gpu = "h200-sxm"
+model_repo = "bartowski/Qwen3-72B-GGUF"
 model_quant = "Q8_0"
-ctx         = 65536
-parallel    = 1
-kv_type     = "q8_0"
+ctx = 65536
+parallel = 1
+kv_type = "q8_0"
 description = "72B lossless Q8 on H200. ~72 GiB weights + ~8 GiB KV. Max quality."
 
-# ── datacenter recipes — B200 SXM 192GB (SM100) ──────────────────────────────
-
 [[recipes]]
-name        = "qwen3-72b-q8-b200"
-label       = "Qwen3-72B  Q8_0  4×256K  (beast)"
-gpu         = "b200-sxm"
-model_repo  = "bartowski/Qwen3-72B-GGUF"
+name = "qwen3-72b-q8-b200"
+label = "Qwen3-72B  Q8_0  4×256K  (beast)"
+gpu = "b200-sxm"
+model_repo = "bartowski/Qwen3-72B-GGUF"
 model_quant = "Q8_0"
-ctx         = 1048576
-parallel    = 4
-kv_type     = "q8_0"
+ctx = 1048576
+parallel = 4
+kv_type = "q8_0"
 description = "72B lossless Q8 on 192GB. ~72 GiB weights + 4 slots × 256K. ~25 GB/s HBM3e bandwidth."
 
 [[recipes]]
-name        = "qwen36-35b-moe-q8-10slot-b200"
-label       = "Qwen3.6-35B-A3B MoE  Q8_K  10×256K"
-gpu         = "b200-sxm"
-model_repo  = "unsloth/Qwen3.6-35B-A3B-GGUF"
+name = "qwen36-35b-moe-q8-10slot-b200"
+label = "Qwen3.6-35B-A3B MoE  Q8_K  10×256K"
+gpu = "b200-sxm"
+model_repo = "unsloth/Qwen3.6-35B-A3B-GGUF"
 model_quant = "UD-Q8_K_XL"
-ctx         = 2621440
-parallel    = 10
-kv_type     = "q8_0"
+ctx = 2621440
+parallel = 10
+kv_type = "q8_0"
 description = "MoE 35B Q8, 10 slots × 256K on 192GB. ~38 GiB weights + ~110 GiB KV pool."
 
-# ── add your own recipes below ────────────────────────────────────────────────
-# Example — Llama-3.3-70B on H100:
-#
-# [[recipes]]
-# name        = "llama33-70b-q4-h100"
-# label       = "Llama-3.3-70B  Q4_K_M  1×64K"
-# gpu         = "h100-sxm"
-# model_repo  = "bartowski/Meta-Llama-3.3-70B-Instruct-GGUF"
-# model_quant = "Q4_K_M"
-# ctx         = 65536
-# parallel    = 1
-# kv_type     = "q8_0"
-# description = "Llama 3.3 70B at Q4 on H100."
-
-# ── Together AI managed recipes ────────────────────────────────────────────────
-# These are "managed" endpoints — no GPU to rent, pay per token.
-# Select them via the Launch wizard → Together AI compute type.
+[[recipes]]
+name = "together-llama3.1-8b"
+provider = "together"
+label = "Llama 3.1 8B ($0.18/M tokens)"
+model_id = "meta-llama/Llama-3.1-8B-Instruct-Turbo"
+ctx = 131072
+price_input = 0.18
+price_output = 0.18
+description = "Fastest/cheapest on Together. Great for quick tasks."
 
 [[recipes]]
-name           = "together-llama3.1-8b"
-provider       = "together"
-label          = "Llama 3.1 8B ($0.18/M tokens)"
-model_id       = "meta-llama/Llama-3.1-8B-Instruct-Turbo"
-ctx            = 131072
-price_input    = 0.18
-price_output   = 0.18
-description    = "Fastest/cheapest on Together. Great for quick tasks."
+name = "together-qwen-coder-32b"
+provider = "together"
+label = "Qwen2.5 Coder 32B ($0.44/M tokens)"
+model_id = "Qwen/Qwen2.5-Coder-32B-Instruct-Turbo"
+ctx = 131072
+price_input = 0.44
+price_output = 0.44
+description = "Code-specialized model. Strong on programming tasks."
 
 [[recipes]]
-name           = "together-qwen-coder-32b"
-provider       = "together"
-label          = "Qwen2.5 Coder 32B ($0.44/M tokens)"
-model_id       = "Qwen/Qwen2.5-Coder-32B-Instruct-Turbo"
-ctx            = 131072
-price_input    = 0.44
-price_output   = 0.44
-description    = "Code-specialized model. Strong on programming tasks."
+name = "together-llama3.3-70b"
+provider = "together"
+label = "Llama 3.3 70B ($0.88/M tokens)"
+model_id = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+ctx = 131072
+price_input = 0.88
+price_output = 0.88
+description = "Flagship mid-size model. Excellent general performance."
 
 [[recipes]]
-name           = "together-llama3.3-70b"
-provider       = "together"
-label          = "Llama 3.3 70B ($0.88/M tokens)"
-model_id       = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
-ctx            = 131072
-price_input    = 0.88
-price_output   = 0.88
-description    = "Flagship mid-size model. Excellent general performance."
+name = "together-qwen2.5-72b"
+provider = "together"
+label = "Qwen2.5 72B ($0.88/M tokens)"
+model_id = "Qwen/Qwen2.5-72B-Instruct-Turbo"
+ctx = 131072
+price_input = 0.88
+price_output = 0.88
+description = "Best Chinese/English bilingual performance."
 
 [[recipes]]
-name           = "together-qwen2.5-72b"
-provider       = "together"
-label          = "Qwen2.5 72B ($0.88/M tokens)"
-model_id       = "Qwen/Qwen2.5-72B-Instruct-Turbo"
-ctx            = 131072
-price_input    = 0.88
-price_output   = 0.88
-description    = "Best Chinese/English bilingual performance."
+name = "together-llama3.1-405b"
+provider = "together"
+label = "Llama 3.1 405B ($3.50/M tokens)"
+model_id = "meta-llama/Llama-3.1-405B-Instruct-Turbo"
+ctx = 131072
+price_input = 3.5
+price_output = 3.5
+description = "Largest available on Together. Premium performance."
 
 [[recipes]]
-name           = "together-llama3.1-405b"
-provider       = "together"
-label          = "Llama 3.1 405B ($3.50/M tokens)"
-model_id       = "meta-llama/Llama-3.1-405B-Instruct-Turbo"
-ctx            = 131072
-price_input    = 3.50
-price_output   = 3.50
-description    = "Largest available on Together. Premium performance."
+name = "together-mixtral-8x7b"
+provider = "together"
+label = "Mixtral 8x7B ($0.60/M tokens)"
+model_id = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+ctx = 32768
+price_input = 0.6
+price_output = 0.6
+description = "Mixture of experts. Good balance of speed and quality."
 
 [[recipes]]
-name           = "together-mixtral-8x7b"
-provider       = "together"
-label          = "Mixtral 8x7B ($0.60/M tokens)"
-model_id       = "mistralai/Mixtral-8x7B-Instruct-v0.1"
-ctx            = 32768
-price_input    = 0.60
-price_output   = 0.60
-description    = "Mixture of experts. Good balance of speed and quality."
+name = "together-qwq-32b"
+provider = "together"
+label = "QwQ 32B Reasoning ($0.44/M tokens)"
+model_id = "Qwen/QwQ-32B-Preview"
+ctx = 32768
+price_input = 0.44
+price_output = 0.44
+description = "Reasoning-focused model. Good for complex problem solving."
 
 [[recipes]]
-name           = "together-qwq-32b"
-provider       = "together"
-label          = "QwQ 32B Reasoning ($0.44/M tokens)"
-model_id       = "Qwen/QwQ-32B-Preview"
-ctx            = 32768
-price_input    = 0.44
-price_output   = 0.44
-description    = "Reasoning-focused model. Good for complex problem solving."
-
-# ── add your own recipes below ────────────────────────────────────────────────
-# ── local endpoint recipes ─────────────────────────────────────────────────────
-# These run llama-server on your own hardware (no Vast.ai).
-# Edit model_path to point to your GGUF files.
-# Binary is auto-discovered from PATH and ~/llama.cpp/build*/bin/.
-#
-# Supported backends: vulkan, rocm, cuda, cpu (auto-detected from binary)
+name = "local-qwen35-9b"
+provider = "local"
+label = "Qwen3.5-9B  Q4_K_M  (local Vulkan)"
+model_path = "~/models/Qwen3.5-9B-Q4_K_M.gguf"
+port = 8100
+ctx = 32768
+parallel = 1
+kv_type = "q8_0"
+n_gpu_layers = 999
+backend = "vulkan"
+mode = "thinking"
+description = "Qwen3.5-9B on AMD iGPU via Vulkan backend. ~4 GB VRAM."
 
 [[recipes]]
-name           = "local-qwen35-9b"
-provider       = "local"
-label          = "Qwen3.5-9B  Q4_K_M  (local Vulkan)"
-model_path     = "~/models/Qwen3.5-9B-Q4_K_M.gguf"
-port           = 8100
-ctx            = 32768
-parallel       = 1
-kv_type        = "q8_0"
-n_gpu_layers   = 999
-backend        = "vulkan"
-mode           = "thinking"
-description    = "Qwen3.5-9B on AMD iGPU via Vulkan backend. ~4 GB VRAM."
+name = "local-qwen35-9b-coding"
+provider = "local"
+label = "Qwen3.5-9B  Q4_K_M  coding preset"
+model_path = "~/models/Qwen3.5-9B-Q4_K_M.gguf"
+port = 8101
+ctx = 65536
+parallel = 1
+kv_type = "q8_0"
+n_gpu_layers = 999
+backend = "vulkan"
+mode = "coding"
+description = "Same model, coding sampling preset (lower temp), larger ctx."
 
 [[recipes]]
-name           = "local-qwen35-9b-coding"
-provider       = "local"
-label          = "Qwen3.5-9B  Q4_K_M  coding preset"
-model_path     = "~/models/Qwen3.5-9B-Q4_K_M.gguf"
-port           = 8101
-ctx            = 65536
-parallel       = 1
-kv_type        = "q8_0"
-n_gpu_layers   = 999
-backend        = "vulkan"
-mode           = "coding"
-description    = "Same model, coding sampling preset (lower temp), larger ctx."
+name = "local-carnice-9b"
+provider = "local"
+label = "Carnice-9B  Q6_K  (local Vulkan)"
+model_path = "~/models/carnice-9b/Carnice-9b-Q6_K.gguf"
+port = 8102
+ctx = 32768
+parallel = 1
+kv_type = "q8_0"
+n_gpu_layers = 999
+backend = "vulkan"
+mode = "thinking"
+description = "Carnice-9B Q6_K local. Hermes-tuned reasoning model."
 
 [[recipes]]
-name           = "local-carnice-9b"
-provider       = "local"
-label          = "Carnice-9B  Q6_K  (local Vulkan)"
-model_path     = "~/models/carnice-9b/Carnice-9b-Q6_K.gguf"
-port           = 8102
-ctx            = 32768
-parallel       = 1
-kv_type        = "q8_0"
-n_gpu_layers   = 999
-backend        = "vulkan"
-mode           = "thinking"
-description    = "Carnice-9B Q6_K local. Hermes-tuned reasoning model."
+name = "qwen36-27b-q8-4x256k-h100"
+label = "Qwen3.6-27B  Q8_K  4×256K  q4 KV"
+gpu = "h100-sxm"
+model_repo = "unsloth/Qwen3.6-27B-GGUF"
+model_quant = "UD-Q8_K_XL"
+ctx = 1048576
+parallel = 4
+kv_type = "q4_0"
+description = "Dense 27B lossless Q8 at 256K. 4 slots × 256K, ~29 GiB weights + ~28 GiB KV (q4) = ~57 GiB. ~23 GiB headroom on 80GB H100."
 
-# ── local config (optional) ───────────────────────────────────────────────────
 [local]
-# Directory to scan for GGUF models during auto-discovery.
-# Comment out or remove to use default ~/models/.
-# models_dir = "~/models"

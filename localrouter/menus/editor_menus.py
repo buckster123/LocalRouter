@@ -179,6 +179,16 @@ def _edit_recipe_fields(recipe: dict, gpu_tiers: dict) -> dict | None:
             edited[field_name] = _coerce_value(new_val)
 
 
+def _safe_int(raw: str | None, default: int, label: str = "value") -> int:
+    """Convert user input to int with validation. Returns default on bad input."""
+    val = raw or str(default)
+    try:
+        return int(val)
+    except ValueError:
+        console.print(f"[red]Invalid number for {label}: '{val}' — using default {default}[/red]")
+        return default
+
+
 def _coerce_value(val: str):
     """Coerce a string value to int/float/list if appropriate."""
     if val.isdigit():
@@ -212,8 +222,8 @@ def _create_recipe_wizard(data: dict) -> dict | None:
         recipe["name"] = questionary.text("Recipe name (slug):", style=MENU_STYLE).ask() or ""
         recipe["label"] = questionary.text("Display label:", style=MENU_STYLE).ask() or ""
         recipe["model_path"] = questionary.text("Model path (e.g. ~/models/model.gguf):", style=MENU_STYLE).ask() or ""
-        recipe["port"] = int(questionary.text("Port:", default="8100", style=MENU_STYLE).ask() or "8100")
-        recipe["ctx"] = int(questionary.text("Context length:", default="32768", style=MENU_STYLE).ask() or "32768")
+        recipe["port"] = _safe_int(questionary.text("Port:", default="8100", style=MENU_STYLE).ask(), 8100, "port")
+        recipe["ctx"] = _safe_int(questionary.text("Context length:", default="32768", style=MENU_STYLE).ask(), 32768, "context length")
         recipe["backend"] = questionary.select(
             "Backend:", choices=["vulkan", "rocm", "cuda", "cpu"], style=MENU_STYLE
         ).ask() or "vulkan"
@@ -226,7 +236,7 @@ def _create_recipe_wizard(data: dict) -> dict | None:
         recipe["name"] = questionary.text("Recipe name (slug):", style=MENU_STYLE).ask() or ""
         recipe["label"] = questionary.text("Display label:", style=MENU_STYLE).ask() or ""
         recipe["model_id"] = questionary.text("Together model ID (e.g. Qwen/Qwen3-32B):", style=MENU_STYLE).ask() or ""
-        recipe["ctx"] = int(questionary.text("Context length:", default="131072", style=MENU_STYLE).ask() or "131072")
+        recipe["ctx"] = _safe_int(questionary.text("Context length:", default="131072", style=MENU_STYLE).ask(), 131072, "context length")
         price = questionary.text("Price per 1M tokens (input):", default="0.50", style=MENU_STYLE).ask() or "0.50"
         recipe["price_input"] = float(price)
         recipe["price_output"] = float(
@@ -246,7 +256,7 @@ def _create_recipe_wizard(data: dict) -> dict | None:
         recipe["model_id"] = questionary.text(
             "HF model ID (e.g. deepseek-ai/DeepSeek-V4-Pro):", style=MENU_STYLE
         ).ask() or ""
-        recipe["ctx"] = int(questionary.text("Context length:", default="393216", style=MENU_STYLE).ask() or "393216")
+        recipe["ctx"] = _safe_int(questionary.text("Context length:", default="393216", style=MENU_STYLE).ask(), 393216, "context length")
         recipe["image_type"] = "vllm"
 
         kv_dtype = questionary.select(
@@ -278,12 +288,12 @@ def _create_recipe_wizard(data: dict) -> dict | None:
         recipe["model_quant"] = questionary.text(
             "Quant tag (substring match, e.g. Q6_K, UD-Q6_K_XL):", style=MENU_STYLE
         ).ask() or ""
-        recipe["ctx"] = int(questionary.text("Context length:", default="98304", style=MENU_STYLE).ask() or "98304")
+        recipe["ctx"] = _safe_int(questionary.text("Context length:", default="98304", style=MENU_STYLE).ask(), 98304, "context length")
 
         # Optional fields
         parallel = questionary.text("Parallel slots:", default="1", style=MENU_STYLE).ask()
         if parallel and parallel != "1":
-            recipe["parallel"] = int(parallel)
+            recipe["parallel"] = _safe_int(parallel, 1, "parallel slots")
 
         kv = questionary.select(
             "KV cache type:", choices=["q8_0", "q4_0", "bf16"], style=MENU_STYLE
@@ -462,9 +472,9 @@ def _create_tier_wizard() -> tuple[str, dict] | None:
     ).ask()
     vast_names = [n.strip() for n in (vast_names_raw or "").split(",") if n.strip()]
     max_price = questionary.text("Max $/hr:", default="3.50", style=MENU_STYLE).ask() or "3.50"
-    vram_gb = int(questionary.text("VRAM per GPU (GB):", default="80", style=MENU_STYLE).ask() or "80")
-    num_gpus = int(questionary.text("Number of GPUs:", default="1", style=MENU_STYLE).ask() or "1")
-    min_disk = int(questionary.text("Min disk (GB):", default="100", style=MENU_STYLE).ask() or "100")
+    vram_gb = _safe_int(questionary.text("VRAM per GPU (GB):", default="80", style=MENU_STYLE).ask(), 80, "VRAM")
+    num_gpus = _safe_int(questionary.text("Number of GPUs:", default="1", style=MENU_STYLE).ask(), 1, "GPU count")
+    min_disk = _safe_int(questionary.text("Min disk (GB):", default="100", style=MENU_STYLE).ask(), 100, "min disk")
     image_type = questionary.select(
         "Default image type:", choices=["prebuilt", "builder"], style=MENU_STYLE
     ).ask() or "builder"

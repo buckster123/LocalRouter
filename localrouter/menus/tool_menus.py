@@ -22,7 +22,7 @@ from rich.table import Table
 from rich import box
 
 from ..config import (
-    console, MENU_STYLE, LOCAL_PORT, PROXY_PORT, LOCAL_TUNNEL_PORT, ROOT,
+    console, MENU_STYLE, LOCAL_PORT, PROXY_PORT, ROOT,
     load_config,
 )
 from ..helpers import (
@@ -38,21 +38,7 @@ from ..cost import (
 from ..vast_ops import _net_rx_delta, _get_container_env, _restart_launch
 from ..proxy import _proxy_up, _proxy_down, tail_proxy_logs, proxy_status_detail
 
-# Optional external usage_tracker (graceful fallback stubs)
-try:
-    from usage_tracker import format_summary, check_rate_limit, format_rate_status
-except ImportError:
-    def format_summary(hours: int = 24) -> str:
-        """Stub: usage_tracker not installed."""
-        return "[dim]usage_tracker not available[/dim]"
-
-    def check_rate_limit(base_url: str, api_key: str) -> dict:
-        """Stub: usage_tracker not installed."""
-        return {}
-
-    def format_rate_status(rate_info: dict) -> str:
-        """Stub: usage_tracker not installed."""
-        return "[dim]rate status not available[/dim]"
+# Usage functions are now in localrouter.cost — no external usage_tracker needed
 
 
 # Endpoint proxy resolver (optional)
@@ -60,7 +46,7 @@ try:
     from endpoint_proxy import resolve_target
 except ImportError:
     def resolve_target():
-        return f"http://127.0.0.1:{LOCAL_TUNNEL_PORT}/v1", None, "vast-gguf"
+        return f"http://127.0.0.1:{LOCAL_PORT}/v1", None, "vast-gguf"
 
 
 # ── batch comparison ─────────────────────────────────────────────────────────
@@ -220,7 +206,7 @@ def menu_batch_compare(provider_cfg):
             log_completion(
                 provider=result["provider"],
                 model_id=result["model_id"],
-                prompt_tokens=len(prompt.split()) * 1.3,  # Rough estimate
+                prompt_tokens=int(len(prompt.split()) * 1.3),  # Rough estimate
                 completion_tokens=result["tokens"],
             )
 
@@ -315,7 +301,7 @@ def menu_diagnose(provider_cfg=None):
     hr("Diagnostics")
 
     # Show usage summary
-    usage_str = format_summary(24)
+    usage_str = format_usage_summary()
     t_usage = Table(box=box.SIMPLE_HEAVY, show_header=False, pad_edge=False)
     t_usage.add_column("key", style="dim", width=16)
     t_usage.add_column("value")
@@ -339,8 +325,7 @@ def menu_diagnose(provider_cfg=None):
         api_key = togeth.get("api_key", os.environ.get("TOGETHER_API_KEY", ""))
         base_url = togeth.get("base_url", "")
         if api_key and base_url:
-            rate_info = check_rate_limit(base_url, api_key)
-            rl_str = format_rate_status(rate_info)
+            rl_str = format_rate_limits(provider_cfg)
             console.print(Panel(rl_str, title="[bold]Together Rate Status[/bold]",
                                border_style="#3d3d5c"))
 

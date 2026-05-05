@@ -248,17 +248,20 @@ def start_local_instance(recipe: dict) -> tuple[bool, str]:
 
     # Start process
     log_file = LOCAL_LOGS / f"{name}.log"
+    log_fh = open(log_file, "w")
     try:
         proc = subprocess.Popen(
             args,
-            stdout=open(log_file, "w"),
+            stdout=log_fh,
             stderr=subprocess.STDOUT,
             cwd=str(ROOT),
             env=env,
         )
     except FileNotFoundError:
+        log_fh.close()
         return False, f"Binary not found: {binary}"
     except Exception as e:
+        log_fh.close()
         return False, str(e)
 
     # Write PID and metadata
